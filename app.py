@@ -137,7 +137,7 @@ if uploaded_file is not None:
     # -----------------------------
     # FINAL OUTPUT
     # -----------------------------
-  if len(results) > 0:
+        if len(results) > 0:
 
         df_results = pd.concat(results, ignore_index=True)
 
