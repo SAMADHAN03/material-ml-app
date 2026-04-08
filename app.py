@@ -53,7 +53,10 @@ def run_pipeline(material, dopant, temp, conc, size):
     return df_input
 
 st.title("🔬 Advanced Material ML System")
-
+uploaded_file = st.file_uploader(
+    "📂 Upload Experimental Data (CSV or Excel)",
+    type=["csv", "xlsx"]
+)
 material = st.selectbox("Material", ["ZnO", "Fe2O3", "CeO2"])
 dopant = st.selectbox("Dopant", ["Al", "Cu", "Ga", "Zn"])
 temp = st.slider("Temperature (K)", 250, 500, 300)
