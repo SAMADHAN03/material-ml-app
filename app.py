@@ -136,6 +136,18 @@ if len(results) > 0:
 
     st.subheader("🔬 Prediction Results")
     st.dataframe(df_results)
+    # -----------------------------
+# DOWNLOAD RESULTS
+# -----------------------------
+
+csv = df_results.to_csv(index=False).encode('utf-8')
+
+st.download_button(
+    label="⬇ Download Results as CSV",
+    data=csv,
+    file_name="material_predictions.csv",
+    mime="text/csv"
+)
 
 else:
     st.error("❌ No valid data to process")
