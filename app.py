@@ -57,6 +57,19 @@ uploaded_file = st.file_uploader(
     "📂 Upload Experimental Data (CSV or Excel)",
     type=["csv", "xlsx"]
 )
+if uploaded_file is not None:
+
+    import pandas as pd
+
+    # Check file type
+    if uploaded_file.name.endswith(".csv"):
+        df = pd.read_csv(uploaded_file)
+    else:
+        df = pd.read_excel(uploaded_file)
+
+    # Show data
+    st.subheader("📊 Uploaded Data Preview")
+    st.dataframe(df)
 material = st.selectbox("Material", ["ZnO", "Fe2O3", "CeO2"])
 dopant = st.selectbox("Dopant", ["Al", "Cu", "Ga", "Zn"])
 temp = st.slider("Temperature (K)", 250, 500, 300)
