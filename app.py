@@ -137,7 +137,7 @@ if uploaded_file is not None:
     # -----------------------------
     # FINAL OUTPUT
     # -----------------------------
-    if len(results) > 0:
+  if len(results) > 0:
 
         df_results = pd.concat(results, ignore_index=True)
 
@@ -174,6 +174,6 @@ if uploaded_file is not None:
 
         st.pyplot(fig)
 
-   else:
+  else:
         st.error("❌ No valid data to process")
     
