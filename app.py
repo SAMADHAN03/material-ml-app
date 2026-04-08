@@ -136,7 +136,7 @@ if len(results) > 0:
 
     st.subheader("🔬 Prediction Results")
     st.dataframe(df_results)
-    # -----------------------------
+# -----------------------------
 # DOWNLOAD RESULTS
 # -----------------------------
 
@@ -148,7 +148,6 @@ st.download_button(
     file_name="material_predictions.csv",
     mime="text/csv"
 )
-
 else:
     st.error("❌ No valid data to process")
 material = st.selectbox("Material", ["ZnO", "Fe2O3", "CeO2"])
