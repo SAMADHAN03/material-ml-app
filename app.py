@@ -109,6 +109,36 @@ df = df.reset_index(drop=True)
 # Show cleaned data
 st.subheader("🧹 Cleaned Data")
 st.dataframe(df)
+# -----------------------------
+# STEP 4: RUN ML ON ALL DATA
+# -----------------------------
+
+results = []
+
+# Loop through each row
+for i, row in df.iterrows():
+    try:
+        res = run_pipeline(
+            row["material"],
+            row["dopant"],
+            row["temp"],
+            row["conc"],
+            row["particle_size"]
+        )
+        results.append(res)
+
+    except Exception as e:
+        st.warning(f"⚠ Skipping row {i}: {e}")
+
+# Combine all results
+if len(results) > 0:
+    df_results = pd.concat(results, ignore_index=True)
+
+    st.subheader("🔬 Prediction Results")
+    st.dataframe(df_results)
+
+else:
+    st.error("❌ No valid data to process")
 material = st.selectbox("Material", ["ZnO", "Fe2O3", "CeO2"])
 dopant = st.selectbox("Dopant", ["Al", "Cu", "Ga", "Zn"])
 temp = st.slider("Temperature (K)", 250, 500, 300)
