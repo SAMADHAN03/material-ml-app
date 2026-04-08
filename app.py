@@ -71,102 +71,109 @@ if uploaded_file is not None:
     st.subheader("📊 Uploaded Data Preview")
     st.dataframe(df)
     # -----------------------------
-# STEP 3: CLEAN & VALIDATE DATA
 # -----------------------------
-
-# Standardize column names (very important)
-df.columns = df.columns.str.strip().str.lower()
-
-# Required columns
-required_cols = ["material", "dopant", "temp", "conc", "particle_size"]
-
-# Check missing columns
-missing = [col for col in required_cols if col not in df.columns]
-
-if missing:
-    st.error(f"❌ Missing columns: {missing}")
-    st.stop()
-
-# Remove empty rows
-df = df.dropna()
-
-# Convert numeric columns
-df["temp"] = pd.to_numeric(df["temp"], errors="coerce")
-df["conc"] = pd.to_numeric(df["conc"], errors="coerce")
-df["particle_size"] = pd.to_numeric(df["particle_size"], errors="coerce")
-
-# Remove invalid numeric rows
-df = df.dropna()
-
-# Filter unrealistic values
-df = df[df["temp"] > 0]
-df = df[df["conc"] >= 0]
-df = df[df["particle_size"] > 0]
-
-# Reset index
-df = df.reset_index(drop=True)
-
-# Show cleaned data
-st.subheader("🧹 Cleaned Data")
-st.dataframe(df)
+# STEP 3 + STEP 4 INSIDE UPLOAD BLOCK
 # -----------------------------
-# STEP 4: RUN ML ON ALL DATA
-# -----------------------------
+if uploaded_file is not None:
 
-results = []
+    if uploaded_file.name.endswith(".csv"):
+        df = pd.read_csv(uploaded_file)
+    else:
+        df = pd.read_excel(uploaded_file)
 
-# Loop through each row
-for i, row in df.iterrows():
-    try:
-        res = run_pipeline(
-            row["material"],
-            row["dopant"],
-            row["temp"],
-            row["conc"],
-            row["particle_size"]
+    # Show data
+    st.subheader("📊 Uploaded Data Preview")
+    st.dataframe(df)
+
+    # -----------------------------
+    # STEP 3: CLEAN DATA
+    # -----------------------------
+    df.columns = df.columns.str.strip().str.lower()
+
+    required_cols = ["material", "dopant", "temp", "conc", "particle_size"]
+
+    missing = [col for col in required_cols if col not in df.columns]
+
+    if missing:
+        st.error(f"❌ Missing columns: {missing}")
+        st.stop()
+
+    df = df.dropna()
+
+    df["temp"] = pd.to_numeric(df["temp"], errors="coerce")
+    df["conc"] = pd.to_numeric(df["conc"], errors="coerce")
+    df["particle_size"] = pd.to_numeric(df["particle_size"], errors="coerce")
+
+    df = df.dropna()
+
+    df = df[df["temp"] > 0]
+    df = df[df["conc"] >= 0]
+    df = df[df["particle_size"] > 0]
+
+    df = df.reset_index(drop=True)
+
+    st.subheader("🧹 Cleaned Data")
+    st.dataframe(df)
+
+    # -----------------------------
+    # STEP 4: RUN ML
+    # -----------------------------
+    results = []
+
+    for i, row in df.iterrows():
+        try:
+            res = run_pipeline(
+                row["material"],
+                row["dopant"],
+                row["temp"],
+                row["conc"],
+                row["particle_size"]
+            )
+            results.append(res)
+
+        except Exception as e:
+            st.warning(f"⚠ Skipping row {i}: {e}")
+
+    # -----------------------------
+    # FINAL OUTPUT
+    # -----------------------------
+    if len(results) > 0:
+
+        df_results = pd.concat(results, ignore_index=True)
+
+        # TABLE
+        st.subheader("📊 Prediction Results")
+        st.dataframe(df_results)
+
+        # DOWNLOAD
+        csv = df_results.to_csv(index=False).encode('utf-8')
+
+        st.download_button(
+            label="⬇ Download All Results",
+            data=csv,
+            file_name="material_predictions.csv",
+            mime="text/csv"
         )
-        results.append(res)
 
-    except Exception as e:
-        st.warning(f"⚠ Skipping row {i}: {e}")
+        # GRAPH
+        import matplotlib.pyplot as plt
 
-# Combine all results
-   if len(results) > 0:
+        fig, ax = plt.subplots(figsize=(8,5))
 
-    df_results = pd.concat(results, ignore_index=True)
+        if "band_gap_exp" in df_results.columns:
+            ax.plot(df_results["band_gap_exp"], marker='o', label="Experimental")
 
-    # TABLE
-    st.subheader("📊 Prediction Results")
-    st.dataframe(df_results)
+        ax.plot(df_results["band_gap_predicted"], marker='s', label="Predicted")
+        ax.plot(df_results["band_gap_expected"], marker='^', label="Expected")
 
-    # DOWNLOAD
-    csv = df_results.to_csv(index=False).encode('utf-8')
+        ax.set_title("Band Gap Comparison")
+        ax.set_xlabel("Sample Index")
+        ax.set_ylabel("Band Gap (eV)")
+        ax.legend()
+        ax.grid(True)
 
-    st.download_button(
-        label="⬇ Download All Results",
-        data=csv,
-        file_name="material_predictions.csv",
-        mime="text/csv"
-    )
+        st.pyplot(fig)
 
-    # GRAPH
-    import matplotlib.pyplot as plt
-
-    fig, ax = plt.subplots(figsize=(8,5))
-
-    if "band_gap_exp" in df_results.columns:
-        ax.plot(df_results["band_gap_exp"], marker='o', label="Experimental")
-
-    ax.plot(df_results["band_gap_predicted"], marker='s', label="Predicted")
-    ax.plot(df_results["band_gap_expected"], marker='^', label="Expected")
-
-    ax.set_title("Band Gap Comparison")
-    ax.set_xlabel("Sample Index")
-    ax.set_ylabel("Band Gap (eV)")
-    ax.legend()
-    ax.grid(True)
-
-    st.pyplot(fig)
-
-else:
-    st.error("❌ No valid data to process")
+    else:
+        st.error("❌ No valid data to process")
+    
