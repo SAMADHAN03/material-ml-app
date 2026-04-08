@@ -70,6 +70,45 @@ if uploaded_file is not None:
     # Show data
     st.subheader("📊 Uploaded Data Preview")
     st.dataframe(df)
+    # -----------------------------
+# STEP 3: CLEAN & VALIDATE DATA
+# -----------------------------
+
+# Standardize column names (very important)
+df.columns = df.columns.str.strip().str.lower()
+
+# Required columns
+required_cols = ["material", "dopant", "temp", "conc", "particle_size"]
+
+# Check missing columns
+missing = [col for col in required_cols if col not in df.columns]
+
+if missing:
+    st.error(f"❌ Missing columns: {missing}")
+    st.stop()
+
+# Remove empty rows
+df = df.dropna()
+
+# Convert numeric columns
+df["temp"] = pd.to_numeric(df["temp"], errors="coerce")
+df["conc"] = pd.to_numeric(df["conc"], errors="coerce")
+df["particle_size"] = pd.to_numeric(df["particle_size"], errors="coerce")
+
+# Remove invalid numeric rows
+df = df.dropna()
+
+# Filter unrealistic values
+df = df[df["temp"] > 0]
+df = df[df["conc"] >= 0]
+df = df[df["particle_size"] > 0]
+
+# Reset index
+df = df.reset_index(drop=True)
+
+# Show cleaned data
+st.subheader("🧹 Cleaned Data")
+st.dataframe(df)
 material = st.selectbox("Material", ["ZnO", "Fe2O3", "CeO2"])
 dopant = st.selectbox("Dopant", ["Al", "Cu", "Ga", "Zn"])
 temp = st.slider("Temperature (K)", 250, 500, 300)
