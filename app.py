@@ -131,18 +131,15 @@ for i, row in df.iterrows():
         st.warning(f"⚠ Skipping row {i}: {e}")
 
 # Combine all results
-if len(results) > 0:
-        df_results = pd.concat(results, ignore_index=True)
+   if len(results) > 0:
 
-    # -----------------------------
-    # SHOW TABLE
-    # -----------------------------
+    df_results = pd.concat(results, ignore_index=True)
+
+    # TABLE
     st.subheader("📊 Prediction Results")
     st.dataframe(df_results)
 
-    # -----------------------------
-    # DOWNLOAD BUTTON
-    # -----------------------------
+    # DOWNLOAD
     csv = df_results.to_csv(index=False).encode('utf-8')
 
     st.download_button(
@@ -152,22 +149,17 @@ if len(results) > 0:
         mime="text/csv"
     )
 
-    # -----------------------------
-    # GRAPH: BAND GAP COMPARISON
-    # -----------------------------
+    # GRAPH
     import matplotlib.pyplot as plt
 
     fig, ax = plt.subplots(figsize=(8,5))
 
-    # Experimental (if available)
     if "band_gap_exp" in df_results.columns:
         ax.plot(df_results["band_gap_exp"], marker='o', label="Experimental")
 
-    # Predicted & Expected
     ax.plot(df_results["band_gap_predicted"], marker='s', label="Predicted")
     ax.plot(df_results["band_gap_expected"], marker='^', label="Expected")
 
-    # Labels
     ax.set_title("Band Gap Comparison")
     ax.set_xlabel("Sample Index")
     ax.set_ylabel("Band Gap (eV)")
@@ -175,6 +167,6 @@ if len(results) > 0:
     ax.grid(True)
 
     st.pyplot(fig)
+
 else:
     st.error("❌ No valid data to process")
-  
