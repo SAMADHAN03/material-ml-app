@@ -174,6 +174,6 @@ if uploaded_file is not None:
 
         st.pyplot(fig)
 
-  else:
+    else:
         st.error("❌ No valid data to process")
     
