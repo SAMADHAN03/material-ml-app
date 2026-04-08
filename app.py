@@ -132,30 +132,49 @@ for i, row in df.iterrows():
 
 # Combine all results
 if len(results) > 0:
-    df_results = pd.concat(results, ignore_index=True)
+        df_results = pd.concat(results, ignore_index=True)
 
-    st.subheader("🔬 Prediction Results")
+    # -----------------------------
+    # SHOW TABLE
+    # -----------------------------
+    st.subheader("📊 Prediction Results")
     st.dataframe(df_results)
-# -----------------------------
-# DOWNLOAD RESULTS
-# -----------------------------
 
-csv = df_results.to_csv(index=False).encode('utf-8')
+    # -----------------------------
+    # DOWNLOAD BUTTON
+    # -----------------------------
+    csv = df_results.to_csv(index=False).encode('utf-8')
 
-st.download_button(
-    label="⬇ Download Results as CSV",
-    data=csv,
-    file_name="material_predictions.csv",
-    mime="text/csv"
-)
+    st.download_button(
+        label="⬇ Download All Results",
+        data=csv,
+        file_name="material_predictions.csv",
+        mime="text/csv"
+    )
+
+    # -----------------------------
+    # GRAPH: BAND GAP COMPARISON
+    # -----------------------------
+    import matplotlib.pyplot as plt
+
+    fig, ax = plt.subplots(figsize=(8,5))
+
+    # Experimental (if available)
+    if "band_gap_exp" in df_results.columns:
+        ax.plot(df_results["band_gap_exp"], marker='o', label="Experimental")
+
+    # Predicted & Expected
+    ax.plot(df_results["band_gap_predicted"], marker='s', label="Predicted")
+    ax.plot(df_results["band_gap_expected"], marker='^', label="Expected")
+
+    # Labels
+    ax.set_title("Band Gap Comparison")
+    ax.set_xlabel("Sample Index")
+    ax.set_ylabel("Band Gap (eV)")
+    ax.legend()
+    ax.grid(True)
+
+    st.pyplot(fig)
 else:
     st.error("❌ No valid data to process")
-material = st.selectbox("Material", ["ZnO", "Fe2O3", "CeO2"])
-dopant = st.selectbox("Dopant", ["Al", "Cu", "Ga", "Zn"])
-temp = st.slider("Temperature (K)", 250, 500, 300)
-conc = st.slider("Concentration (%)", 1.0, 10.0, 5.0)
-size = st.slider("Particle Size (nm)", 5, 50, 20)
-
-if st.button("Predict"):
-    result = run_pipeline(material, dopant, temp, conc, size)
-    st.dataframe(result)
+  
