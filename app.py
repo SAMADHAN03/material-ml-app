@@ -4,7 +4,7 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 
-# --- STEP 1: MUST BE THE FIRST STREAMLIT COMMAND ---
+# --- STEP 1: CONFIGURATION ---
 st.set_page_config(page_title="Material ML Analysis", layout="wide")
 
 # 2. VISUAL STYLING (Background & Logos)
@@ -36,7 +36,6 @@ st.markdown("""
     }
     .stButton>button:hover {
         background-color: #0056b3;
-        border: none;
     }
     </style>
     """, unsafe_allow_html=True)
@@ -49,7 +48,7 @@ def load_assets():
         features = joblib.load("features.pkl")
         return model, features
     except Exception as e:
-        st.error(f"Error loading model files: { e }")
+        st.error(f"Error loading model files: {e}")
         return None, None
 
 model, feature_columns = load_assets()
@@ -91,7 +90,7 @@ def run_pipeline(material, dopant, temp, conc, size):
 
 # 5. USER INTERFACE
 st.title("🔬 Material ML Analysis Platform")
-st.markdown("**Predicting Band Gap and Conductivity using specialized Machine Learning models**")
+st.markdown("**Comparison of Theoretical, Predicted, and Expected Band Gap values**")
 st.divider()
 
 if model is not None:
@@ -135,28 +134,41 @@ if model is not None:
                 
                 df_results = pd.concat(results, ignore_index=True)
 
-                # 6. ATTRACTIVE RESULTS DISPLAY
+                # 6. ENHANCED RESULTS DISPLAY
                 st.divider()
                 m1, m2, m3 = st.columns(3)
-                m1.metric("Avg Band Gap", f"{df_results['band_gap_predicted'].mean():.2f} eV")
+                m1.metric("Avg Predicted Gap", f"{df_results['band_gap_predicted'].mean():.2f} eV")
                 m2.metric("Total Samples", len(df_results))
                 m3.metric("Avg Conductivity", f"{df_results['conductivity'].mean():.1e} S/m")
 
                 st.subheader("✅ Processed Results")
                 st.dataframe(df_results, use_container_width=True)
                 
-                # Visualizations
-                col_left, col_right = st.columns(2)
-                with col_left:
-                    fig1, ax1 = plt.subplots()
-                    ax1.plot(df_results["band_gap_predicted"], marker='o', color='#007bff')
-                    ax1.set_title("Predicted Band Gap")
-                    ax1.set_ylabel("eV")
-                    st.pyplot(fig1)
+                # --- UPDATED COMPARISON GRAPH ---
+                st.subheader("📈 Band Gap Comparison Analysis")
+                fig, ax = plt.subplots(figsize=(12, 6))
                 
-                with col_right:
-                    csv = df_results.to_csv(index=False).encode('utf-8')
-                    st.download_button("⬇️ Download Results as CSV", data=csv, file_name="predictions.csv", mime="text/csv")
+                # Plotting all three key values
+                ax.plot(df_results.index, df_results["band_gap_theoretical"], 
+                        label="Theoretical (Varshni)", color="#FF5733", linestyle='--', marker='x', alpha=0.7)
+                
+                ax.plot(df_results.index, df_results["band_gap_predicted"], 
+                        label="ML Predicted", color="#007bff", marker='o', linewidth=2)
+                
+                ax.plot(df_results.index, df_results["band_gap_expected"], 
+                        label="Expected (Ensemble Avg)", color="#28a745", marker='s', alpha=0.8)
+
+                ax.set_xlabel("Sample Index")
+                ax.set_ylabel("Band Gap (eV)")
+                ax.set_title("Theoretical vs ML Predicted vs Ensemble Expected")
+                ax.legend(loc='upper right')
+                ax.grid(True, linestyle=':', alpha=0.6)
+                
+                st.pyplot(fig)
+                
+                # Download Button
+                csv = df_results.to_csv(index=False).encode('utf-8')
+                st.download_button("⬇️ Download Detailed Results", data=csv, file_name="material_analysis_results.csv", mime="text/csv")
 
         except Exception as e:
             st.error(f"Analysis Error: {e}")
