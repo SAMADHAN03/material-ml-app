@@ -4,9 +4,10 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 
-# 1. VISUAL STYLING (Background & Logos)
-st.set_page_content(page_title="Material ML Analysis", layout="wide")
+# --- STEP 1: MUST BE THE FIRST STREAMLIT COMMAND ---
+st.set_page_config(page_title="Material ML Analysis", layout="wide")
 
+# 2. VISUAL STYLING (Background & Logos)
 st.markdown("""
     <style>
     .stApp {
@@ -40,7 +41,7 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# 2. LOAD MODEL AND FEATURES
+# 3. LOAD MODEL AND FEATURES
 @st.cache_resource
 def load_assets():
     try:
@@ -48,12 +49,12 @@ def load_assets():
         features = joblib.load("features.pkl")
         return model, features
     except Exception as e:
-        st.error(f"Error loading model files: {e}")
+        st.error(f"Error loading model files: { e }")
         return None, None
 
 model, feature_columns = load_assets()
 
-# 3. CORE FUNCTIONS
+# 4. CORE FUNCTIONS
 def varshni(mat, T):
     params = {
         "ZnO": (3.44, 5.5e-4, 900),
@@ -88,7 +89,7 @@ def run_pipeline(material, dopant, temp, conc, size):
     df_input["conductivity"] = sigma0 * np.exp(-df_input["band_gap_expected"] / (k * df_input["temp"]))
     return df_input
 
-# 4. USER INTERFACE
+# 5. USER INTERFACE
 st.title("🔬 Material ML Analysis Platform")
 st.markdown("**Predicting Band Gap and Conductivity using specialized Machine Learning models**")
 st.divider()
@@ -134,7 +135,7 @@ if model is not None:
                 
                 df_results = pd.concat(results, ignore_index=True)
 
-                # 5. ATTRACTIVE RESULTS DISPLAY
+                # 6. ATTRACTIVE RESULTS DISPLAY
                 st.divider()
                 m1, m2, m3 = st.columns(3)
                 m1.metric("Avg Band Gap", f"{df_results['band_gap_predicted'].mean():.2f} eV")
