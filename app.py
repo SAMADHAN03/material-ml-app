@@ -55,12 +55,14 @@ model, feature_columns = load_assets()
 
 # 4. CORE FUNCTIONS
 def varshni(mat, T):
+    # Dictionary of known material constants
     params = {
         "ZnO": (3.44, 5.5e-4, 900),
         "Fe2O3": (2.2, 4.5e-4, 500),
         "CeO2": (3.2, 4.7e-4, 600)
     }
-    Eg0, alpha, beta = params.get(mat, (3, 5e-4, 500))
+    # If material is unknown, use a standard semiconductor default
+    Eg0, alpha, beta = params.get(mat, (3.0, 5.0e-4, 500))
     return Eg0 - (alpha * T**2) / (T + beta)
 
 def run_pipeline(material, dopant, temp, conc, size):
@@ -80,7 +82,7 @@ def run_pipeline(material, dopant, temp, conc, size):
     df_encoded = df_encoded.reindex(columns=feature_columns, fill_value=0)
     df_input["band_gap_predicted"] = model.predict(df_encoded)
     
-    # Mean and Conductivity Calculation
+    # Expected value (Ensemble Mean)
     df_input["band_gap_expected"] = df_input[["band_gap_predicted","band_gap_api","band_gap_oqmd","band_gap_aflow","band_gap_theoretical"]].mean(axis=1)
     
     k = 8.617e-5 # Boltzmann constant
@@ -98,16 +100,13 @@ if model is not None:
 
     if uploaded_file is not None:
         try:
-            # File Loading
             if uploaded_file.name.endswith(".csv"):
                 df = pd.read_csv(uploaded_file, sep=None, engine='python')
             else:
                 df = pd.read_excel(uploaded_file)
             
-            # Column Standardization
             df.columns = df.columns.str.strip().str.lower()
             
-            # Flexible Mapping
             mapping = {
                 "temp": ["temp", "temp_k", "temperature"],
                 "conc": ["conc", "concentration", "dopant_conc"],
@@ -144,25 +143,28 @@ if model is not None:
                 st.subheader("✅ Processed Results")
                 st.dataframe(df_results, use_container_width=True)
                 
-                # --- UPDATED COMPARISON GRAPH ---
+                # --- UPDATED GRAPH WITH EXACT LABELS ---
                 st.subheader("📈 Band Gap Comparison Analysis")
                 fig, ax = plt.subplots(figsize=(12, 6))
                 
-                # Plotting all three key values
+                # 1. Theoretical Plot
                 ax.plot(df_results.index, df_results["band_gap_theoretical"], 
-                        label="Theoretical (Varshni)", color="#FF5733", linestyle='--', marker='x', alpha=0.7)
+                        label="band_gap_theoretical", color="#FF5733", linestyle='--', marker='x', alpha=0.7)
                 
+                # 2. Predicted Plot
                 ax.plot(df_results.index, df_results["band_gap_predicted"], 
-                        label="ML Predicted", color="#007bff", marker='o', linewidth=2)
+                        label="band_gap_predicted", color="#007bff", marker='o', linewidth=2)
                 
+                # 3. Expected Plot
                 ax.plot(df_results.index, df_results["band_gap_expected"], 
-                        label="Expected (Ensemble Avg)", color="#28a745", marker='s', alpha=0.8)
+                        label="band_gap_expected", color="#28a745", marker='s', alpha=0.8)
 
                 ax.set_xlabel("Sample Index")
                 ax.set_ylabel("Band Gap (eV)")
-                ax.set_title("Theoretical vs ML Predicted vs Ensemble Expected")
-                ax.legend(loc='upper right')
+                ax.set_title("Theoretical vs Predicted vs Expected Comparison")
+                
                 ax.grid(True, linestyle=':', alpha=0.6)
+                ax.legend(title="Band Gap Metrics", loc='upper right', frameon=True, shadow=True)
                 
                 st.pyplot(fig)
                 
