@@ -109,4 +109,56 @@ if model is not None:
                 bar = st.progress(0)
                 for i, row in df.iterrows():
                     results.append(run_pipeline(row["material"], row["dopant"], row["temp"], row["conc"], row["particle_size"]))
-                    bar.progress
+                    bar.progress((i + 1) / len(df))
+                
+                df_results = pd.concat(results, ignore_index=True)
+
+                # Metrics Section
+                st.divider()
+                c1, c2, c3 = st.columns(3)
+                c1.metric("Avg Predicted Gap", f"{df_results['band_gap_predicted'].mean():.2f} eV")
+                c2.metric("Total Samples", len(df_results))
+                c3.metric("Avg Conductivity", f"{df_results['conductivity'].mean():.1e} S/m")
+
+                # Comparison Graph
+                st.subheader("📈 Band Gap Comparison: Theoretical vs Predicted vs Expected")
+                
+                # Create Material Composition labels
+                df_results['Material Composition'] = df_results['material'] + " (" + df_results['dopant'] + ")"
+                
+                fig, ax = plt.subplots(figsize=(10, 5))
+                ax.plot(df_results['Material Composition'], df_results["band_gap_theoretical"], 
+                        label="band_gap_theoretical", color="#E63946", linestyle='--', marker='x', alpha=0.8)
+                ax.plot(df_results['Material Composition'], df_results["band_gap_predicted"], 
+                        label="band_gap_predicted", color="#457B9D", marker='o', linewidth=2.5)
+                ax.plot(df_results['Material Composition'], df_results["band_gap_expected"], 
+                        label="band_gap_expected", color="#2A9D8F", marker='s', alpha=0.9)
+
+                ax.set_ylabel("Band Gap (eV)", fontsize=10, fontweight='bold')
+                ax.set_xlabel("Material Composition", fontsize=10, fontweight='bold')
+                plt.xticks(rotation=0) # Kept horizontal as requested
+                ax.grid(True, linestyle=':', alpha=0.6)
+                ax.legend(loc='best', frameon=True, shadow=True)
+                plt.tight_layout()
+                st.pyplot(fig)
+
+                # Results Table
+                st.subheader("✅ Full Result Data")
+                st.dataframe(df_results, use_container_width=True)
+
+                # --- DOWNLOAD CENTER ---
+                st.divider()
+                st.subheader("⬇️ Download Analysis Results")
+                d1, d2 = st.columns(2)
+                with d1:
+                    csv_data = df_results.to_csv(index=False).encode('utf-8')
+                    st.download_button("📥 Download Data (CSV)", data=csv_data, file_name="material_results.csv", use_container_width=True)
+                with d2:
+                    buf = io.BytesIO()
+                    fig.savefig(buf, format="png", dpi=300)
+                    st.download_button("🖼️ Download Graph (PNG)", data=buf.getvalue(), file_name="comparison_chart.png", use_container_width=True)
+
+        except Exception as e:
+            st.error(f"Analysis Error: {e}")
+else:
+    st.warning("Ensure model.pkl and features.pkl are uploaded to your repository.")
