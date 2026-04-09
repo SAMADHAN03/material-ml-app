@@ -169,7 +169,7 @@ df = df[df["conc"] >= 0]
 df = df[df["particle_size"] > 0]
 
 df = df.reset_index(drop=True)
-    else:
+else:
         df = pd.read_excel(uploaded_file)
 
     # Show data
