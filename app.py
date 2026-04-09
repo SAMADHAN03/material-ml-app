@@ -61,7 +61,7 @@ def run_pipeline(material, dopant, temp, conc, size):
 
 # 5. USER INTERFACE
 st.title("🔬 Material ML Analysis Platform")
-st.markdown("**Predictive Analysis: Results and Comparison Dashboard**")
+st.markdown("**Predictive Analysis of Band Gap and Conductivity**")
 st.divider()
 
 if model is not None:
@@ -85,7 +85,6 @@ if model is not None:
                 results = []
                 bar = st.progress(0)
                 for i, row in df.iterrows():
-                    # FIXED: Line 88 syntax below
                     results.append(run_pipeline(row["material"], row["dopant"], row["temp"], row["conc"], row["particle_size"]))
                     bar.progress((i + 1) / len(df))
                 
@@ -109,4 +108,34 @@ if model is not None:
                 fig, ax = plt.subplots(figsize=(10, 5))
                 x_vals = range(len(df_results))
                 
-                ax.plot(x_vals, df_results["band_gap_theoretical
+                # Plotting calls correctly closed
+                ax.plot(x_vals, df_results["band_gap_theoretical"], label="band_gap_theoretical", color="#E63946", linestyle='--', marker='x', alpha=0.8)
+                ax.plot(x_vals, df_results["band_gap_predicted"], label="band_gap_predicted", color="#457B9D", marker='o', linewidth=2.5)
+                ax.plot(x_vals, df_results["band_gap_expected"], label="band_gap_expected", color="#2A9D8F", marker='s', alpha=0.9)
+
+                ax.set_xticks(x_vals)
+                ax.set_xticklabels(df_results['Material Composition'], rotation=0)
+                
+                ax.set_ylabel("Band Gap (eV)", fontsize=10, fontweight='bold')
+                ax.set_xlabel("Material Composition", fontsize=10, fontweight='bold')
+                ax.grid(True, linestyle=':', alpha=0.6)
+                ax.legend(loc='best', frameon=True, shadow=True)
+                plt.tight_layout()
+                st.pyplot(fig)
+
+                # --- 3. DOWNLOAD CENTER ---
+                st.divider()
+                st.subheader("⬇️ Download Center")
+                d1, d2 = st.columns(2)
+                with d1:
+                    csv_data = df_results.to_csv(index=False).encode('utf-8')
+                    st.download_button("📥 Download Data (CSV)", data=csv_data, file_name="material_results.csv", use_container_width=True)
+                with d2:
+                    buf = io.BytesIO()
+                    fig.savefig(buf, format="png", dpi=300)
+                    st.download_button("🖼️ Download Graph (PNG)", data=buf.getvalue(), file_name="comparison_chart.png", use_container_width=True)
+
+        except Exception as e:
+            st.error(f"Analysis Error: {e}")
+else:
+    st.warning("Ensure model.pkl and features.pkl are in the repository.")
