@@ -61,7 +61,7 @@ def run_pipeline(material, dopant, temp, conc, size):
 
 # 5. USER INTERFACE
 st.title("🔬 Material ML Analysis Platform")
-st.markdown("**Predictive Analysis of Band Gap and Conductivity**")
+st.markdown("**Predictive Analysis: Results and Comparison Dashboard**")
 st.divider()
 
 if model is not None:
@@ -85,4 +85,28 @@ if model is not None:
                 results = []
                 bar = st.progress(0)
                 for i, row in df.iterrows():
-                    results.append(run_pipeline(row["material"], row["dopant"], row["temp"], row["conc
+                    # FIXED: Line 88 syntax below
+                    results.append(run_pipeline(row["material"], row["dopant"], row["temp"], row["conc"], row["particle_size"]))
+                    bar.progress((i + 1) / len(df))
+                
+                df_results = pd.concat(results, ignore_index=True)
+
+                # Metrics Section
+                st.divider()
+                c1, c2, c3 = st.columns(3)
+                c1.metric("Avg Predicted Gap", f"{df_results['band_gap_predicted'].mean():.2f} eV")
+                c2.metric("Total Samples", len(df_results))
+                c3.metric("Avg Conductivity", f"{df_results['conductivity'].mean():.1e} S/m")
+
+                # --- 1. DATA TABLE FIRST ---
+                st.subheader("✅ Full Result Data")
+                st.dataframe(df_results, use_container_width=True)
+
+                # --- 2. GRAPH SECOND ---
+                st.subheader("📈 Band Gap Comparison")
+                df_results['Material Composition'] = df_results['material'].astype(str) + " (" + df_results['dopant'].astype(str) + ")"
+                
+                fig, ax = plt.subplots(figsize=(10, 5))
+                x_vals = range(len(df_results))
+                
+                ax.plot(x_vals, df_results["band_gap_theoretical
