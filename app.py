@@ -55,4 +55,86 @@ def run_pipeline(material, dopant, temp, conc, size):
     df_input["band_gap_expected"] = df_input[["band_gap_predicted","band_gap_api","band_gap_oqmd","band_gap_aflow","band_gap_theoretical"]].mean(axis=1)
     
     k, sigma0 = 8.617e-5, 1e3
-    df_input["conductivity"] = sigma0 * np.exp(-df_input["band_gap_expected"]
+    df_input["conductivity"] = sigma0 * np.exp(-df_input["band_gap_expected"] / (k * df_input["temp"]))
+    return df_input
+
+# 5. USER INTERFACE
+st.title("🔬 Material ML Analysis Platform")
+st.markdown("**Unified Analysis: Theoretical, Predicted, and Expected Comparisons**")
+st.divider()
+
+if model is not None:
+    uploaded_file = st.file_uploader("📂 Upload Experimental Data (CSV or Excel)", type=["csv", "xlsx"])
+
+    if uploaded_file is not None:
+        try:
+            df = pd.read_csv(uploaded_file, sep=None, engine='python') if uploaded_file.name.endswith(".csv") else pd.read_excel(uploaded_file)
+            df.columns = df.columns.str.strip().str.lower()
+            
+            mapping = {"temp": ["temp", "temp_k", "temperature"], "conc": ["conc", "concentration"], "particle_size": ["size", "particle_size"]}
+            for standard, aliases in mapping.items():
+                for alias in aliases:
+                    if alias in df.columns:
+                        df = df.rename(columns={alias: standard}); break
+
+            st.subheader("📊 Data Preview")
+            st.dataframe(df.head(), use_container_width=True)
+
+            if st.button("🚀 Run Comprehensive Analysis"):
+                results = []
+                bar = st.progress(0)
+                for i, row in df.iterrows():
+                    results.append(run_pipeline(row["material"], row["dopant"], row["temp"], row["conc"], row["particle_size"]))
+                    bar.progress((i + 1) / len(df))
+                
+                df_results = pd.concat(results, ignore_index=True)
+
+                # Metrics
+                st.divider()
+                m1, m2, m3 = st.columns(3)
+                m1.metric("Avg Predicted Gap", f"{df_results['band_gap_predicted'].mean():.2f} eV")
+                m2.metric("Samples Processed", len(df_results))
+                m3.metric("Avg Conductivity", f"{df_results['conductivity'].mean():.1e} S/m")
+
+                # Graph Section
+                st.subheader("📈 Band Gap Comparison")
+                
+                # Material Composition Labels
+                df_results['label'] = df_results['material'] + " (" + df_results['dopant'] + ")"
+                
+                fig, ax = plt.subplots(figsize=(12, 6))
+                
+                # Line Plots
+                ax.plot(df_results['label'], df_results["band_gap_theoretical"], label="band_gap_theoretical", color="#E63946", linestyle='--', marker='x', alpha=0.8)
+                ax.plot(df_results['label'], df_results["band_gap_predicted"], label="band_gap_predicted", color="#457B9D", marker='o', linewidth=2.5)
+                ax.plot(df_results['label'], df_results["band_gap_expected"], label="band_gap_expected", color="#2A9D8F", marker='s', alpha=0.9)
+
+                # Axis Formatting
+                ax.set_ylabel("Band Gap (eV)", fontsize=12, fontweight='bold')
+                ax.set_xlabel("Material Composition", fontsize=12, fontweight='bold')
+                plt.xticks(rotation=0) 
+                
+                ax.grid(True, linestyle=':', alpha=0.5)
+                ax.legend(loc='upper right', frameon=True, shadow=True)
+                
+                plt.tight_layout()
+                st.pyplot(fig)
+
+                # --- DOWNLOAD CENTER ---
+                st.divider()
+                st.subheader("⬇️ Download Center")
+                d1, d2 = st.columns(2)
+                
+                with d1:
+                    csv = df_results.to_csv(index=False).encode('utf-8')
+                    st.download_button("📥 Download Results (CSV)", data=csv, file_name="analysis_report.csv", mime="text/csv", use_container_width=True)
+                
+                with d2:
+                    buf = io.BytesIO()
+                    fig.savefig(buf, format="png", bbox_inches='tight', dpi=300)
+                    st.download_button("🖼️ Download Analysis Graph (PNG)", data=buf.getvalue(), file_name="analysis_chart.png", mime="image/png", use_container_width=True)
+
+        except Exception as e:
+            st.error(f"Analysis Error: {e}")
+else:
+    st.warning("Ensure model.pkl and features.pkl are in the repository.")
