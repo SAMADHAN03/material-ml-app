@@ -64,6 +64,111 @@ if uploaded_file is not None:
     # Check file type
     if uploaded_file.name.endswith(".csv"):
         df = pd.read_csv(uploaded_file)
+        # -----------------------------
+# UNIVERSAL FILE READER
+# -----------------------------
+try:
+    if uploaded_file.name.endswith(".csv"):
+
+        # Auto-detect separator (comma, semicolon, tab, etc.)
+        df = pd.read_csv(uploaded_file, sep=None, engine='python')
+
+    elif uploaded_file.name.endswith(".xlsx"):
+        df = pd.read_excel(uploaded_file)
+
+    else:
+        st.error("❌ Unsupported file format")
+        st.stop()
+
+except Exception as e:
+    st.error(f"❌ File reading error: {e}")
+    st.stop()
+    # -----------------------------
+# AUTO COLUMN DETECTION
+# -----------------------------
+column_map = {
+    "material": ["material", "material_type"],
+    "dopant": ["dopant", "dopant_type"],
+    "temp": ["temp", "temperature", "temp_k"],
+    "conc": ["conc", "concentration", "dopant_conc"],
+    "particle_size": ["particle_size", "size", "particle"]
+}
+
+def find_column(possible_names):
+    for col in df.columns:
+        if col in possible_names:
+            return col
+    return None
+
+mapped_cols = {}
+
+for key, options in column_map.items():
+    col = find_column(options)
+    if col:
+        mapped_cols[key] = col
+    else:
+        st.error(f"❌ Missing column for: {key}")
+        st.stop()
+
+# Rename to standard format
+df = df.rename(columns={
+    mapped_cols["material"]: "material",
+    mapped_cols["dopant"]: "dopant",
+    mapped_cols["temp"]: "temp",
+    mapped_cols["conc"]: "conc",
+    mapped_cols["particle_size"]: "particle_size"
+})
+# -----------------------------
+# AUTO COLUMN DETECTION
+# -----------------------------
+column_map = {
+    "material": ["material", "material_type"],
+    "dopant": ["dopant", "dopant_type"],
+    "temp": ["temp", "temperature", "temp_k"],
+    "conc": ["conc", "concentration", "dopant_conc"],
+    "particle_size": ["particle_size", "size", "particle"]
+}
+
+def find_column(possible_names):
+    for col in df.columns:
+        if col in possible_names:
+            return col
+    return None
+
+mapped_cols = {}
+
+for key, options in column_map.items():
+    col = find_column(options)
+    if col:
+        mapped_cols[key] = col
+    else:
+        st.error(f"❌ Missing column for: {key}")
+        st.stop()
+
+# Rename to standard format
+df = df.rename(columns={
+    mapped_cols["material"]: "material",
+    mapped_cols["dopant"]: "dopant",
+    mapped_cols["temp"]: "temp",
+    mapped_cols["conc"]: "conc",
+    mapped_cols["particle_size"]: "particle_size"
+})
+# -----------------------------
+# DATA FILTERING
+# -----------------------------
+df = df.dropna()
+
+df["temp"] = pd.to_numeric(df["temp"], errors="coerce")
+df["conc"] = pd.to_numeric(df["conc"], errors="coerce")
+df["particle_size"] = pd.to_numeric(df["particle_size"], errors="coerce")
+
+df = df.dropna()
+
+df = df[df["temp"] > 0]
+df = df[df["conc"] >= 0]
+df = df[df["particle_size"] > 0]
+
+df = df.reset_index(drop=True)
     else:
         df = pd.read_excel(uploaded_file)
 
