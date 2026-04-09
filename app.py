@@ -3,40 +3,27 @@ import joblib
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
+import io
 
 # --- STEP 1: CONFIGURATION ---
 st.set_page_config(page_title="Material ML Analysis", layout="wide")
 
-# 2. VISUAL STYLING (Background & Logos)
+# 2. VISUAL STYLING
 st.markdown("""
     <style>
-    .stApp {
-        background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
-    }
+    .stApp { background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%); }
     .stApp::before {
         content: 'Au Ag Cu Fe Zn Li Ne';
-        position: fixed;
-        top: 15%;
-        left: 5%;
-        font-size: 8rem;
-        font-weight: bold;
-        color: rgba(0, 0, 0, 0.03);
-        z-index: -1;
-        transform: rotate(-15deg);
-        white-space: nowrap;
+        position: fixed; top: 15%; left: 5%; font-size: 8rem;
+        font-weight: bold; color: rgba(0, 0, 0, 0.03);
+        z-index: -1; transform: rotate(-15deg); white-space: nowrap;
     }
     .stButton>button {
-        border-radius: 20px;
-        background-color: #007bff;
-        color: white;
-        width: 100%;
-        font-weight: bold;
-        border: none;
-        padding: 10px;
+        border-radius: 20px; background-color: #007bff; color: white;
+        width: 100%; font-weight: bold; border: none; padding: 10px;
     }
-    .stButton>button:hover {
-        background-color: #0056b3;
-    }
+    .stButton>button:hover { background-color: #0056b3; }
+    .download-section { background-color: rgba(255,255,255,0.5); padding: 20px; border-radius: 15px; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -55,44 +42,26 @@ model, feature_columns = load_assets()
 
 # 4. CORE FUNCTIONS
 def varshni(mat, T):
-    # Dictionary of known material constants
-    params = {
-        "ZnO": (3.44, 5.5e-4, 900),
-        "Fe2O3": (2.2, 4.5e-4, 500),
-        "CeO2": (3.2, 4.7e-4, 600)
-    }
-    # If material is unknown, use a standard semiconductor default
+    params = {"ZnO": (3.44, 5.5e-4, 900), "Fe2O3": (2.2, 4.5e-4, 500), "CeO2": (3.2, 4.7e-4, 600)}
     Eg0, alpha, beta = params.get(mat, (3.0, 5.0e-4, 500))
     return Eg0 - (alpha * T**2) / (T + beta)
 
 def run_pipeline(material, dopant, temp, conc, size):
-    df_input = pd.DataFrame([{
-        "material": material, "dopant": dopant, "temp": temp, 
-        "conc": conc, "particle_size": size 
-    }])
-    
-    # Baseline comparison values
-    df_input["band_gap_api"] = 3.0
-    df_input["band_gap_oqmd"] = 3.1
-    df_input["band_gap_aflow"] = 3.05
+    df_input = pd.DataFrame([{"material": material, "dopant": dopant, "temp": temp, "conc": conc, "particle_size": size}])
+    df_input["band_gap_api"], df_input["band_gap_oqmd"], df_input["band_gap_aflow"] = 3.0, 3.1, 3.05
     df_input["band_gap_theoretical"] = df_input.apply(lambda x: varshni(x["material"], x["temp"]), axis=1)
     
-    # ML Prediction
-    df_encoded = pd.get_dummies(df_input)
-    df_encoded = df_encoded.reindex(columns=feature_columns, fill_value=0)
+    df_encoded = pd.get_dummies(df_input).reindex(columns=feature_columns, fill_value=0)
     df_input["band_gap_predicted"] = model.predict(df_encoded)
-    
-    # Expected value (Ensemble Mean)
     df_input["band_gap_expected"] = df_input[["band_gap_predicted","band_gap_api","band_gap_oqmd","band_gap_aflow","band_gap_theoretical"]].mean(axis=1)
     
-    k = 8.617e-5 # Boltzmann constant
-    sigma0 = 1e3 # Reference conductivity
+    k, sigma0 = 8.617e-5, 1e3
     df_input["conductivity"] = sigma0 * np.exp(-df_input["band_gap_expected"] / (k * df_input["temp"]))
     return df_input
 
 # 5. USER INTERFACE
 st.title("🔬 Material ML Analysis Platform")
-st.markdown("**Comparison of Theoretical, Predicted, and Expected Band Gap values**")
+st.markdown("**Unified Analysis: Theoretical, Predicted, and Expected Comparisons**")
 st.divider()
 
 if model is not None:
@@ -100,79 +69,67 @@ if model is not None:
 
     if uploaded_file is not None:
         try:
-            if uploaded_file.name.endswith(".csv"):
-                df = pd.read_csv(uploaded_file, sep=None, engine='python')
-            else:
-                df = pd.read_excel(uploaded_file)
-            
+            df = pd.read_csv(uploaded_file, sep=None, engine='python') if uploaded_file.name.endswith(".csv") else pd.read_excel(uploaded_file)
             df.columns = df.columns.str.strip().str.lower()
             
-            mapping = {
-                "temp": ["temp", "temp_k", "temperature"],
-                "conc": ["conc", "concentration", "dopant_conc"],
-                "particle_size": ["size", "particle_size", "radius"]
-            }
-            
+            mapping = {"temp": ["temp", "temp_k", "temperature"], "conc": ["conc", "concentration"], "particle_size": ["size", "particle_size"]}
             for standard, aliases in mapping.items():
                 for alias in aliases:
                     if alias in df.columns:
-                        df = df.rename(columns={alias: standard})
-                        break
+                        df = df.rename(columns={alias: standard}); break
 
             st.subheader("📊 Data Preview")
             st.dataframe(df.head(), use_container_width=True)
 
-            if st.button("🚀 Run Analysis"):
+            if st.button("🚀 Run Comprehensive Analysis"):
                 results = []
-                progress_bar = st.progress(0)
-                
+                bar = st.progress(0)
                 for i, row in df.iterrows():
-                    res = run_pipeline(row["material"], row["dopant"], row["temp"], row["conc"], row["particle_size"])
-                    results.append(res)
-                    progress_bar.progress((i + 1) / len(df))
+                    results.append(run_pipeline(row["material"], row["dopant"], row["temp"], row["conc"], row["particle_size"]))
+                    bar.progress((i + 1) / len(df))
                 
                 df_results = pd.concat(results, ignore_index=True)
 
-                # 6. ENHANCED RESULTS DISPLAY
+                # Metrics
                 st.divider()
                 m1, m2, m3 = st.columns(3)
                 m1.metric("Avg Predicted Gap", f"{df_results['band_gap_predicted'].mean():.2f} eV")
-                m2.metric("Total Samples", len(df_results))
+                m2.metric("Samples Processed", len(df_results))
                 m3.metric("Avg Conductivity", f"{df_results['conductivity'].mean():.1e} S/m")
 
-                st.subheader("✅ Processed Results")
-                st.dataframe(df_results, use_container_width=True)
+                # Graph Section
+                st.subheader("📈 Band Gap Comparison: Material-Specific Analysis")
                 
-                # --- UPDATED GRAPH WITH EXACT LABELS ---
-                st.subheader("📈 Band Gap Comparison Analysis")
+                # Create proper name labels for X-axis
+                df_results['label'] = df_results['material'] + " (" + df_results['dopant'] + ")"
+                
                 fig, ax = plt.subplots(figsize=(12, 6))
-                
-                # 1. Theoretical Plot
-                ax.plot(df_results.index, df_results["band_gap_theoretical"], 
-                        label="band_gap_theoretical", color="#FF5733", linestyle='--', marker='x', alpha=0.7)
-                
-                # 2. Predicted Plot
-                ax.plot(df_results.index, df_results["band_gap_predicted"], 
-                        label="band_gap_predicted", color="#007bff", marker='o', linewidth=2)
-                
-                # 3. Expected Plot
-                ax.plot(df_results.index, df_results["band_gap_expected"], 
-                        label="band_gap_expected", color="#28a745", marker='s', alpha=0.8)
+                ax.plot(df_results['label'], df_results["band_gap_theoretical"], label="band_gap_theoretical", color="#E63946", linestyle='--', marker='x', alpha=0.8)
+                ax.plot(df_results['label'], df_results["band_gap_predicted"], label="band_gap_predicted", color="#457B9D", marker='o', linewidth=2.5)
+                ax.plot(df_results['label'], df_results["band_gap_expected"], label="band_gap_expected", color="#2A9D8F", marker='s', alpha=0.9)
 
-                ax.set_xlabel("Sample Index")
-                ax.set_ylabel("Band Gap (eV)")
-                ax.set_title("Theoretical vs Predicted vs Expected Comparison")
-                
-                ax.grid(True, linestyle=':', alpha=0.6)
-                ax.legend(title="Band Gap Metrics", loc='upper right', frameon=True, shadow=True)
-                
+                ax.set_ylabel("Band Gap (eV)", fontsize=12, fontweight='bold')
+                ax.set_xlabel("Material Composition", fontsize=12, fontweight='bold')
+                plt.xticks(rotation=45)
+                ax.grid(True, linestyle=':', alpha=0.5)
+                ax.legend(loc='upper right', frameon=True, shadow=True)
                 st.pyplot(fig)
+
+                # --- DOWNLOAD CENTER ---
+                st.divider()
+                st.subheader("⬇️ Download Center")
+                d1, d2 = st.columns(2)
                 
-                # Download Button
-                csv = df_results.to_csv(index=False).encode('utf-8')
-                st.download_button("⬇️ Download Detailed Results", data=csv, file_name="material_analysis_results.csv", mime="text/csv")
+                with d1:
+                    csv = df_results.to_csv(index=False).encode('utf-8')
+                    st.download_button("📥 Download Results (CSV)", data=csv, file_name="analysis_report.csv", mime="text/csv", use_container_width=True)
+                
+                with d2:
+                    buf = io.BytesIO()
+                    fig.savefig(buf, format="png", bbox_inches='tight', dpi=300)
+                    st.download_button("🖼️ Download Analysis Graph (PNG)", data=buf.getvalue(), file_name="analysis_chart.png", mime="image/png", use_container_width=True)
 
         except Exception as e:
             st.error(f"Analysis Error: {e}")
 else:
-    st.warning("Please ensure model.pkl and features.pkl are present in the repository.")
+    st.warning("Ensure model.pkl and features.pkl are in the repository.")
