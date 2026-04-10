@@ -1,8 +1,8 @@
 streamlit
 pandas
 numpy
-joblib
 matplotlib
-openpyxl
-scikit-learn
+joblib
 mp-api
+scikit-learn
+openpyxl
