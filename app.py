@@ -8,7 +8,7 @@ from mp_api.client import MPRester  # New Import
 
 # --- STEP 1: CONFIGURATION ---
 st.set_page_config(page_title="Material ML Analysis", layout="wide")
-API_KEY = "YOUR_MATERIALS_PROJECT_API_KEY" # Get this from materialsproject.org
+API_KEY = "3CX5U54ckg2IfJV2lK5zRIrS76Kx2rX2" # Get this from materialsproject.org
 
 # --- LOAD ASSETS ---
 @st.cache_resource
