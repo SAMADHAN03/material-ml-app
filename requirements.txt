@@ -5,3 +5,4 @@ joblib
 matplotlib
 openpyxl
 scikit-learn
+mp-api
