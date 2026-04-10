@@ -67,13 +67,9 @@ if model is not None:
     
     if uploaded_file is not None:
         try:
-            # Load data
             df = pd.read_csv(uploaded_file, sep=None, engine='python') if uploaded_file.name.endswith('.csv') else pd.read_excel(uploaded_file)
-            
-            # 1. CLEAN HEADERS: Remove special chars and force lowercase
             df.columns = df.columns.str.replace(r'[^\w\s]', '', regex=True).str.strip().str.lower()
             
-            # 2. SMART MAPPING
             mapping = {"temp": ["temp", "temperature"], "material": ["mat", "formula"], "dopant": ["dopedwith", "dopant"]}
             for std, aliases in mapping.items():
                 for alias in aliases:
@@ -81,19 +77,16 @@ if model is not None:
                         df = df.rename(columns={alias: std})
                         break
             
-            # 3. FORCE NUMERIC CLEANING (The "Bad Data" Fix)
-            # This converts letters/garbage in numeric columns into 'NaN'
             numeric_cols = ["temp", "conc", "particle_size"]
             for col in numeric_cols:
                 if col in df.columns:
                     df[col] = pd.to_numeric(df[col], errors='coerce')
             
-            # 4. PURGE BAD DATA: Remove any row where Material or Temp is missing/invalid
             df = df.dropna(subset=['material', 'temp']).reset_index(drop=True)
 
             if st.button("🚀 Run Analysis"):
                 if df.empty:
-                    st.error("❌ All data in the file was invalid or incorrectly formatted. Please check your columns.")
+                    st.error("❌ No valid data found. Check your file format.")
                 else:
                     results = []
                     bar = st.progress(0.0)
@@ -107,18 +100,18 @@ if model is not None:
                     y_true, y_pred = df_results["Theoretical Band Gap"], df_results["Predicted Bandgap"]
                     mae = mean_absolute_error(y_true, y_pred)
                     r2 = r2_score(y_true, y_pred)
+                    
                     m1, m2, m3 = st.columns(3)
                     m1.metric("MAE", f"{mae:.3f} eV")
                     m2.metric("R² Score", f"{r2:.2f}")
                     m3.metric("Samples", len(df_results))
-                    st.success(f"✅ Analysis Complete! MAE: {mae:.3f} eV")
+                    
+                    if mae < 0.2:
+                        st.success(f"✅ High Accuracy: MAE is {mae:.3f} eV.")
+                    else:
+                        st.warning(f"⚠️ Variance detected: MAE is {mae:.3f} eV.")
 
-                    # --- DOWNLOAD BUTTONS ---
-                    c_dl1, c_dl2 = st.columns(2)
-                    csv_data = df_results.to_csv(index=False).encode('utf-8')
-                    c_dl1.download_button("📥 Download Data (CSV)", csv_data, "results.csv", "text/csv", use_container_width=True)
-
-                    # --- GRAPH ---
+                    # --- GRAPH GENERATION (Before Buttons) ---
                     df_p = df_results.sort_values("Temp")
                     fig, ax = plt.subplots(figsize=(10, 5))
                     ax.plot(df_p["Temp"], df_p["Theoretical Band Gap"], label="Theoretical", color="#E63946", ls='--', marker='x')
@@ -126,13 +119,24 @@ if model is not None:
                     ax.plot(df_p["Temp"], df_p["Band Gap Expected"], label="Combined", color="#2A9D8F", marker='s', alpha=0.6)
                     ax.set_xlabel("Temperature (K)"), ax.set_ylabel("Band Gap (eV)")
                     ax.legend(), ax.grid(True, alpha=0.3)
+                    
+                    # Prepare Graph Image for Download
+                    img_buffer = io.BytesIO()
+                    fig.savefig(img_buffer, format='png', dpi=300)
+                    img_data = img_buffer.getvalue()
+
+                    # --- DOWNLOAD BUTTONS ---
+                    st.divider()
+                    c_dl1, c_dl2 = st.columns(2)
+                    
+                    csv_data = df_results.to_csv(index=False).encode('utf-8')
+                    c_dl1.download_button("📥 Download Data (CSV)", csv_data, "analysis_results.csv", "text/csv", use_container_width=True)
+                    
+                    # Graph Download Button
+                    c_dl2.download_button("🖼️ Download Graph (PNG)", img_data, "bandgap_graph.png", "image/png", use_container_width=True)
+
+                    # Display Plot and Table
                     st.pyplot(fig)
-
-                    # Graph Download
-                    img = io.BytesIO()
-                    fig.savefig(img, format='png', dpi=300)
-                    c_dl2.download_button("🖼️ Download Graph (PNG)", img.getvalue(), "graph.png", "image/png", use_container_width=True)
-
                     st.subheader("📋 Results Table")
                     st.dataframe(df_results, use_container_width=True)
 
