@@ -75,7 +75,10 @@ if model is not None:
     if uploaded_file is not None:
         try:
             # Load Data
-            df = pd.read_csv(uploaded_file) if uploaded_file.name.endswith('.csv') else pd.read_excel(uploaded_file)
+            if uploaded_file.name.endswith('.csv'):
+                df = pd.read_csv(uploaded_file)
+            else:
+                df = pd.read_excel(uploaded_file)
             
             # --- ROBUST DATA CLEANING ---
             df.columns = df.columns.str.strip().str.lower()
@@ -89,18 +92,4 @@ if model is not None:
             initial_count = len(df)
             # Drop rows with missing critical info or negative temperature
             df = df.dropna(subset=['material', 'temp'])
-            df = df[df['temp'] >= 0].reset_index(drop=True)
-            
-            cleaned_count = initial_count - len(df)
-            if cleaned_count > 0:
-                st.warning(f"🧹 Removed {cleaned_count} invalid/missing rows.")
-
-            if st.button("🚀 Run Analysis"):
-                if df.empty:
-                    st.error("No valid data rows to analyze.")
-                else:
-                    results = []
-                    progress_bar = st.progress(0.0)
-                    total_rows = len(df)
-                    
-                    # Using enumerate with explicit float conversion for progress
+            df = df[df['temp'] >= 0].reset_index(drop=True
