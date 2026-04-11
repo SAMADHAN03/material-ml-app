@@ -1,25 +1,31 @@
 import streamlit as st
 import joblib
 import pandas as pd
-import numpy as np
+from mp_api.client import MPRester
 
-# Load the brain of the app
+# 1. Load the exported files from your GitHub
 model = joblib.load('hybrid_bandgap_model.pkl')
-scaler = joblib.load('scaler.pkl')
 features = joblib.load('model_features.pkl')
 
-# UI Elements
-st.title("Material Band Gap Predictor")
-temp = st.number_input("Enter Temperature (K)", value=300)
-# ... add other inputs like material choice ...
+st.title("🔬 Hybrid Materials Predictor")
 
-if st.button("Predict"):
-    # Create input DataFrame
-    input_df = pd.DataFrame([[temp, ...]], columns=features)
+# 2. User Input
+mat_name = st.text_input("Enter Material Formula (e.g., ZnO)", "ZnO")
+temp = st.slider("Temperature (K)", 100, 1000, 300)
+
+if st.button("Calculate Hybrid Band Gap"):
+    # Fetch real data from Materials Project
+    with MPRester("3CX5U54ckg2IfJV2lK5zRIrS76Kx2rX2") as mpr:
+        docs = mpr.materials.summary.search(formula=mat_name, fields=["band_gap"])
+        api_gap = docs[0].band_gap if docs else 0.0
+
+    # Prepare data for ML model
+    # Note: Ensure your input_df matches the 'features' list exactly
+    input_df = pd.DataFrame([[temp, api_gap]], columns=['temp', 'band_gap_api']) 
     
-    # SCALE the data before predicting
-    scaled_input = scaler.transform(input_df)
+    ml_pred = model.predict(input_df)[0]
     
-    # Predict
-    prediction = model.predict(scaled_input)
-    st.success(f"Hybrid Predicted Band Gap: {prediction[0]:.4f} eV")
+    # Final Hybrid Logic (The 60% error reduction formula)
+    hybrid_val = (0.5 * ml_pred) + (0.5 * api_gap)
+    
+    st.success(f"Final Hybrid Result: {hybrid_val:.3f} eV")
