@@ -4,274 +4,207 @@ import numpy as np
 import joblib
 import matplotlib.pyplot as plt
 import io
-import tempfile
 
 from sklearn.metrics import mean_absolute_error, r2_score
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, Image
+
+# PDF + Word
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table
+from reportlab.lib import colors
 from reportlab.lib.styles import getSampleStyleSheet
 from docx import Document
 
 # -----------------------------
 # CONFIG
 # -----------------------------
-st.set_page_config(page_title="Advanced Material ML System", layout="wide")
+st.set_page_config(page_title="Material ML System", layout="wide")
 
 # -----------------------------
 # LOAD MODEL
 # -----------------------------
 @st.cache_resource
 def load_assets():
-    return (
-        joblib.load("model.pkl"),
-        joblib.load("features.pkl"),
-        joblib.load("scaler.pkl")
-    )
+    model = joblib.load("model.pkl")
+    features = joblib.load("features.pkl")
+    scaler = joblib.load("scaler.pkl")
+    return model, features, scaler
 
 model, feature_columns, scaler = load_assets()
 
 # -----------------------------
-# INTELLIGENT READER
+# SMART FILE READER
 # -----------------------------
-def intelligent_reader(file):
-
-    # FILE READ
+def read_file(uploaded_file):
     try:
-        name = file.name.lower()
-
-        if name.endswith((".xlsx", ".xls")):
-            df = pd.read_excel(file)
-
+        if uploaded_file.name.endswith(".xlsx"):
+            df = pd.read_excel(uploaded_file)
         else:
             try:
-                df = pd.read_csv(file, sep=None, engine='python')
+                df = pd.read_csv(uploaded_file)
             except:
-                try:
-                    file.seek(0)
-                    df = pd.read_csv(file, encoding='latin1', sep=None, engine='python')
-                except:
-                    file.seek(0)
-                    df = pd.read_csv(file, encoding='cp1252', sep=None, engine='python')
-
+                df = pd.read_csv(uploaded_file, encoding="latin1")
+        return df
     except Exception as e:
-        st.error(f"File read error: {e}")
+        st.error(f"Error reading file: {e}")
         return None
 
-    # CLEAN COLUMN NAMES
-    df.columns = df.columns.str.strip().str.lower()
+# -----------------------------
+# CLEAN DATA
+# -----------------------------
+def clean_data(df):
+    df.columns = df.columns.str.strip()
 
-    # COLUMN DETECTION
-    mapping = {}
-    for col in df.columns:
+    df = df.rename(columns={
+        "Material": "material",
+        "Dopant": "dopant",
+        "Dopant Concentration (%)": "conc",
+        "Temperature (°C)": "temp_c",
+        "Particle size (nm)": "particle_size",
+        "Experimental band gap (eV)": "band_gap_exp",
+        "Reference": "reference"
+    })
 
-        if "material" in col:
-            mapping[col] = "material"
-
-        elif "dopant" in col:
-            mapping[col] = "dopant"
-
-        elif "%" in col or "conc" in col:
-            mapping[col] = "conc"
-
-        elif "temp" in col:
-            mapping[col] = "temp"
-
-        elif "particle" in col:
-            mapping[col] = "particle_size"
-
-        elif "band" in col:
-            mapping[col] = "band_gap_exp"
-
-        elif "ref" in col:
-            mapping[col] = "reference"
-
-    df = df.rename(columns=mapping)
-
-    # TYPE CONVERSION
-    for col in ["temp", "conc", "particle_size", "band_gap_exp"]:
+    # Convert numeric
+    for col in ["temp_c", "conc", "particle_size", "band_gap_exp"]:
         if col in df.columns:
             df[col] = pd.to_numeric(df[col], errors="coerce")
 
-    df = df.dropna(subset=["temp", "band_gap_exp"])
+    df = df.dropna(subset=["temp_c", "band_gap_exp"])
 
-    # REMOVE INVALID
-    df = df[df["temp"] > 0]
+    df = df[df["temp_c"] > 0]
+    df = df[df["conc"] >= 0]
+    df = df[df["particle_size"] > 0]
 
-    # TEMP CONVERSION
-    df["temp_c"] = df["temp"]
-    df["temp_k"] = df["temp"] + 273
+    df["temp"] = df["temp_c"] + 273
 
-    # FILL MISSING
-    df["material"] = df.get("material", "ZnO")
-    df["dopant"] = df.get("dopant", "None")
-    df["conc"] = df.get("conc", 0)
-    df["particle_size"] = df.get("particle_size", 1)
-    df["reference"] = df.get("reference", "N/A")
-
-    return df.reset_index(drop=True)
+    return df
 
 # -----------------------------
-# VARSHNI MODEL
+# FEATURE ENGINEERING
 # -----------------------------
-def varshni(T):
-    Eg0, alpha, beta = 3.44, 5.5e-4, 900
-    return Eg0 - (alpha*T**2)/(T+beta)
+def prepare_features(df):
+    df["inv_temp"] = 1 / df["temp"]
+    df["log_size"] = np.log(df["particle_size"])
+    df["conc_sq"] = df["conc"] ** 2
 
-# -----------------------------
-# ML PIPELINE
-# -----------------------------
-def predict(material, dopant, tempK, conc, size):
+    df_model = df.drop(columns=["reference"], errors="ignore")
 
-    df_input = pd.DataFrame([{
-        "material": material,
-        "dopant": dopant,
-        "temp": tempK,
-        "conc": conc,
-        "particle_size": size,
-        "inv_temp": 1/tempK,
-        "log_size": np.log(size),
-        "conc_sq": conc**2
-    }])
+    df_encoded = pd.get_dummies(df_model, columns=["material", "dopant"])
 
-    df_encoded = pd.get_dummies(df_input)
     df_encoded = df_encoded.reindex(columns=feature_columns, fill_value=0)
 
-    df_scaled = scaler.transform(df_encoded)
+    X = df_encoded.astype(float)
+    X_scaled = scaler.transform(X)
 
-    pred = model.predict(df_scaled)[0]
-    theo = varshni(tempK)
-    expected = np.mean([pred, theo, 3.1, 3.05])
-
-    return pred, theo, expected
+    return X_scaled
 
 # -----------------------------
-# PDF
+# MAIN UI
 # -----------------------------
-def generate_pdf(df, fig):
-    path = tempfile.NamedTemporaryFile(delete=False, suffix=".pdf").name
-    doc = SimpleDocTemplate(path)
-    styles = getSampleStyleSheet()
+st.title("🔬 Advanced Material ML System")
 
-    elements = []
-    elements.append(Paragraph("Material ML Report", styles['Title']))
-    elements.append(Spacer(1, 12))
-
-    data = [df.columns.tolist()] + df.values.tolist()
-    elements.append(Table(data))
-
-    img = tempfile.NamedTemporaryFile(delete=False, suffix=".png").name
-    fig.savefig(img, bbox_inches='tight')
-
-    elements.append(Spacer(1, 12))
-    elements.append(Image(img, width=450, height=300))
-
-    doc.build(elements)
-    return path
-
-# -----------------------------
-# WORD
-# -----------------------------
-def generate_word(df):
-    path = tempfile.NamedTemporaryFile(delete=False, suffix=".docx").name
-    doc = Document()
-
-    doc.add_heading("Material ML Report", 0)
-
-    table = doc.add_table(rows=1, cols=len(df.columns))
-    for i, col in enumerate(df.columns):
-        table.rows[0].cells[i].text = col
-
-    for _, row in df.iterrows():
-        cells = table.add_row().cells
-        for i, val in enumerate(row):
-            cells[i].text = str(val)
-
-    doc.save(path)
-    return path
-
-# -----------------------------
-# UI
-# -----------------------------
-st.title("🔬 Advanced Material ML System (Ultimate)")
-
-uploaded_file = st.file_uploader("Upload CSV / Excel")
+uploaded_file = st.file_uploader("Upload CSV or Excel", type=["csv", "xlsx"])
 
 if uploaded_file:
 
-    df = intelligent_reader(uploaded_file)
+    df = read_file(uploaded_file)
 
-    st.subheader("📊 Cleaned Data")
-    st.dataframe(df)
+    if df is not None:
 
-    if st.button("🚀 Run Analysis"):
+        st.subheader("📊 Raw Data")
+        st.dataframe(df)
 
-        results = []
+        df = clean_data(df)
 
-        for _, row in df.iterrows():
+        st.subheader("🧹 Cleaned Data")
+        st.dataframe(df)
 
-            pred, theo, exp = predict(
-                row["material"],
-                row["dopant"],
-                row["temp_k"],
-                row["conc"],
-                row["particle_size"]
+        if st.button("🚀 Run Prediction"):
+
+            X_scaled = prepare_features(df)
+
+            predictions = model.predict(X_scaled)
+
+            df["Predicted Band Gap"] = predictions
+
+            df["Expected Band Gap"] = (
+                df["Predicted Band Gap"] + df["band_gap_exp"]
+            ) / 2
+
+            # Metrics
+            mae = mean_absolute_error(df["band_gap_exp"], predictions)
+            r2 = r2_score(df["band_gap_exp"], predictions)
+
+            st.subheader("📊 Results")
+            st.dataframe(df)
+
+            st.success(f"MAE: {mae:.4f}")
+            st.success(f"R²: {r2:.4f}")
+
+            # -----------------------------
+            # GRAPH
+            # -----------------------------
+            fig, ax = plt.subplots()
+
+            ax.plot(df["temp"], df["band_gap_exp"], label="Experimental", marker="o")
+            ax.plot(df["temp"], df["Predicted Band Gap"], label="Predicted", marker="s")
+            ax.plot(df["temp"], df["Expected Band Gap"], label="Expected", marker="^")
+
+            ax.set_xlabel("Temperature (K)")
+            ax.set_ylabel("Band Gap (eV)")
+            ax.legend()
+            ax.grid(True)
+
+            st.pyplot(fig)
+
+            # -----------------------------
+            # DOWNLOAD CSV
+            # -----------------------------
+            csv = df.to_csv(index=False).encode("utf-8")
+
+            st.download_button(
+                "⬇ Download CSV",
+                data=csv,
+                file_name="results.csv"
             )
 
-            results.append({
-                "Material": row["material"],
-                "Dopant": row["dopant"],
-                "Temp (°C)": row["temp_c"],
-                "Temp (K)": row["temp_k"],
-                "Conc (%)": row["conc"],
-                "Particle Size (nm)": row["particle_size"],
-                "Experimental": row["band_gap_exp"],
-                "Predicted": pred,
-                "Theoretical": theo,
-                "Expected": exp,
-                "Reference": row["reference"]
-            })
+            # -----------------------------
+            # PDF GENERATION
+            # -----------------------------
+            buffer = io.BytesIO()
+            doc = SimpleDocTemplate(buffer)
 
-        df_results = pd.DataFrame(results)
+            styles = getSampleStyleSheet()
+            elements = []
 
-        st.subheader("📋 Results")
-        st.dataframe(df_results)
+            elements.append(Paragraph("Material ML Results", styles["Title"]))
+            elements.append(Spacer(1, 12))
 
-        # METRICS
-        mae = mean_absolute_error(df_results["Experimental"], df_results["Predicted"])
-        r2 = r2_score(df_results["Experimental"], df_results["Predicted"])
+            table_data = [df.columns.tolist()] + df.values.tolist()
+            table = Table(table_data)
+            elements.append(table)
 
-        col1, col2 = st.columns(2)
-        col1.metric("MAE", round(mae, 4))
-        col2.metric("R²", round(r2, 4))
+            doc.build(elements)
 
-        # GRAPH
-        fig, ax = plt.subplots()
+            st.download_button(
+                "⬇ Download PDF",
+                data=buffer.getvalue(),
+                file_name="results.pdf"
+            )
 
-        ax.plot(df_results["Temp (K)"], df_results["Experimental"], marker='o', label="Experimental")
-        ax.plot(df_results["Temp (K)"], df_results["Predicted"], marker='s', label="Predicted")
-        ax.plot(df_results["Temp (K)"], df_results["Expected"], marker='^', label="Expected")
+            # -----------------------------
+            # WORD FILE
+            # -----------------------------
+            docx = Document()
+            docx.add_heading("Material ML Results", 0)
 
-        ax.set_xlabel("Temperature (K)")
-        ax.set_ylabel("Band Gap (eV)")
-        ax.legend()
-        ax.grid(True)
+            for i in range(len(df)):
+                docx.add_paragraph(str(df.iloc[i].to_dict()))
 
-        st.pyplot(fig)
+            doc_buffer = io.BytesIO()
+            docx.save(doc_buffer)
 
-        # DOWNLOADS
-        csv = df_results.to_csv(index=False).encode()
-        st.download_button("⬇ Download CSV", csv, "results.csv")
-
-        buf = io.BytesIO()
-        fig.savefig(buf, format="png")
-        st.download_button("⬇ Download Graph", buf.getvalue(), "graph.png")
-
-        pdf = generate_pdf(df_results, fig)
-        with open(pdf, "rb") as f:
-            st.download_button("📄 Download PDF", f, "report.pdf")
-
-        word = generate_word(df_results)
-        with open(word, "rb") as f:
-            st.download_button("📝 Download Word", f, "report.docx")
-
-        st.success("✅ Complete System Executed Successfully 🚀")
-        
+            st.download_button(
+                "⬇ Download Word",
+                data=doc_buffer.getvalue(),
+                file_name="results.docx"
+            )
