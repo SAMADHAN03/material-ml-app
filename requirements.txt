@@ -1,6 +1,10 @@
 streamlit
 pandas
-scikit-learn
+scikit-learn==1.6.1
 joblib
 matplotlib
 openpyxl
+plotly
+mp-api
+scipy
+numpy
