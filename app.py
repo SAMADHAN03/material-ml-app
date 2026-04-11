@@ -53,7 +53,6 @@ def run_pipeline(material, dopant, temp, conc, size):
     oqmd, aflow = 3.1, 3.05
     expected = np.mean([predicted, theoretical, oqmd, aflow])
     
-    # Return specific ordered dictionary
     return {
         "Material": material,
         "Dopant": dopant,
@@ -77,11 +76,12 @@ if model is not None:
     
     if uploaded_file is not None:
         try:
+            # 1. Load Data
             df = pd.read_csv(uploaded_file, sep=None, engine='python') if uploaded_file.name.endswith('.csv') else pd.read_excel(uploaded_file)
             
+            # 2. Standardize Columns
             df.columns = df.columns.str.replace(r'[^\w\s]', '', regex=True).str.strip().str.lower()
             mapping = {"temp": ["temp", "temperature"], "material": ["mat", "formula"], "dopant": ["dopedwith", "dopant"]}
-            
             for std, aliases in mapping.items():
                 for alias in aliases:
                     if alias in df.columns:
@@ -90,32 +90,40 @@ if model is not None:
             
             # --- ROBUST DATA CLEANING ---
             initial_count = len(df)
-            
-            # 1. Convert columns to numeric, forcing errors to 'NaN' (None)
             for col in ["temp", "conc", "particle_size"]:
                 if col in df.columns:
                     df[col] = pd.to_numeric(df[col], errors='coerce')
             
-            # 2. Remove 'None' / NaN in essential columns
             df = df.dropna(subset=['material', 'temp'])
-            
-            # 3. Remove Invalid/Negative Temperatures (Physical Constraint for Kelvin)
             df = df[df['temp'] >= 0].reset_index(drop=True)
             
-            # Notification of cleaned rows
             removed = initial_count - len(df)
             if removed > 0:
-                st.warning(f"🧹 Cleaned {removed} invalid rows (missing data or negative temperatures).")
+                st.warning(f"🧹 Cleaned {removed} invalid rows.")
 
+            # --- RUN ANALYSIS ---
             if st.button("🚀 Run Analysis"):
                 if df.empty:
-                    st.error("❌ No valid data found. Check your file format or ensure valid temperatures.")
+                    st.error("❌ No valid data found.")
                 else:
                     results = []
                     bar = st.progress(0.0)
                     for i, row in df.iterrows():
+                        # FIXED: This was where the SyntaxError occurred
                         results.append(run_pipeline(
                             row['material'], 
                             row.get('dopant', 'None'), 
                             row['temp'], 
-                            row.get('
+                            row.get('conc', 0), 
+                            row.get('particle_size', 0)
+                        ))
+                        bar.progress(min((i + 1) / len(df), 1.0))
+                    
+                    df_results = pd.DataFrame(results)
+
+                    # --- METRICS & VISUALS ---
+                    y_true, y_pred = df_results["Theoretical Band Gap"], df_results["Predicted Bandgap"]
+                    mae = mean_absolute_error(y_true, y_pred)
+                    r2 = r2_score(y_true, y_pred)
+                    
+                    m1
