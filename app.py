@@ -103,17 +103,4 @@ if model is not None:
                     progress_bar = st.progress(0.0)
                     total_rows = len(df)
                     
-                    # Using enumerate to ensure progress is based on row count, not index
-                    for count, (idx, row) in enumerate(df.iterrows(), 1):
-                        res = run_pipeline(
-                            row['material'], 
-                            row.get('dopant', 'None'), 
-                            row['temp'], 
-                            row.get('conc', 0), 
-                            row.get('particle_size', 0)
-                        )
-                        results.append(res)
-                        # Ensure progress never exceeds 1.0
-                        progress_bar.progress(float(count / total_rows))
-                    
-                    df_results
+                    # Using enumerate with explicit float conversion for progress
