@@ -1,8 +1,8 @@
-reportlab
-python-docx
-mp-api
-scikit-learn
-matplotlib
+streamlit
 pandas
 numpy
+scikit-learn
+matplotlib
 joblib
+reportlab
+python-docx
