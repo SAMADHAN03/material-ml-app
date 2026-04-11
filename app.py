@@ -12,9 +12,25 @@ features = joblib.load('model_features.pkl')
 
 st.set_page_config(page_title="Material ML Predictor", layout="wide")
 st.title("🔬 Advanced Material Band Gap Predictor")
-st.write("Upload your experimental data to calculate ML-Predicted, Theoretical, and Hybrid Expected Band Gaps.")
+st.write("Upload your experimental data to calculate ML-Predicted, Theoretical, and Hybrid Expected values.")
 
-# --- 2. FILE UPLOADER ---
+# --- 2. VARSHNI PHYSICS ENGINE ---
+def calculate_varshni(row):
+    """Calculates theoretical shift: Eg(T) = Eg(0) - (alpha*T^2)/(T + beta)"""
+    # Material-specific constants
+    params = {
+        "ZnO": {"eg0": 3.44, "alpha": 5.5e-4, "beta": 900},
+        "Fe2O3": {"eg0": 2.20, "alpha": 4.5e-4, "beta": 500},
+        "CeO2": {"eg0": 3.20, "alpha": 4.7e-4, "beta": 600}
+    }
+    
+    mat = str(row.get('material', 'ZnO'))
+    T = row.get('temp', 300)
+    
+    p = params.get(mat, params["ZnO"]) # Default to ZnO if unknown
+    return p['eg0'] - (p['alpha'] * T**2) / (T + p['beta'])
+
+# --- 3. FILE UPLOADER ---
 uploaded_file = st.file_uploader("Upload CSV or Excel", type=['csv', 'xlsx'])
 
 if uploaded_file is not None:
@@ -23,84 +39,60 @@ if uploaded_file is not None:
         df = pd.read_csv(uploaded_file)
     else:
         df = pd.read_excel(uploaded_file)
-    
-    # --- 3. AUTOMATIC CLEANING & MAPPING ---
-    # Standardize column names (lowercase, no spaces)
-    df.columns = df.columns.str.strip().str.lower()
-    
-    # Expanded mapping to catch common Excel naming variations
+
+    # --- 4. AUTOMATIC CLEANING & MAPPING ---
+    # Standardize column names (fixes case sensitivity and spaces)
     mapping = {
-        'conc': 'concentration', 'concentration (%)': 'concentration',
-        'temp': 'temperature', 'temperature (k)': 'temperature',
-        'psize': 'particle_size', 'size (nm)': 'particle_size'
+        'temperature': 'temp', 'temp_k': 'temp', 't': 'temp',
+        'concentration': 'conc', 'c': 'conc',
+        'size': 'particle_size', 'nm': 'particle_size',
+        'experimental': 'band_gap_exp', 'actual': 'band_gap_exp'
     }
+    df.columns = df.columns.str.strip().str.lower()
     df = df.rename(columns=mapping)
 
-    # Initialize required columns with NaN to prevent KeyError
-    df['theoretical_gap'] = np.nan
-    df['predicted_gap'] = np.nan
-    df['expected_gap'] = np.nan
+    # Ensure required features exist for ML model
+    for col in features:
+        if col not in df.columns:
+            df[col] = 0.0 # Default value to prevent crash
 
-    # Force relevant columns to be numeric; non-numeric values become NaN
-    cols_to_fix = [c for c in ['temperature', 'concentration', 'particle_size'] if c in df.columns]
-    for col in cols_to_fix:
-        df[col] = pd.to_numeric(df[col], errors='coerce')
-    
-    # Remove rows where essential data is missing
-    df = df.dropna(subset=cols_to_fix).reset_index(drop=True)
+    # --- 5. HYBRID CALCULATIONS ---
+    # A. ML Prediction
+    df['ML_Predicted'] = model.predict(df[features])
 
-    # --- 4. CALCULATIONS ---
-    # Varshni Theoretical Gap Calculation
-    if 'temperature' in df.columns:
-        alpha, beta = 5.5e-4, 900
-        # Formula: Eg(T) = Eg(0) - (alpha * T^2) / (T + beta)
-        # Using 3.44 eV (e.g., for GaN/ZnO type materials) as base
-        df['theoretical_gap'] = 3.44 - (alpha * df['temperature']**2) / (df['temperature'] + beta)
+    # B. Varshni Theoretical Prediction
+    df['Theoretical_Gap'] = df.apply(calculate_varshni, axis=1)
 
-    # Align with ML Model Features
-    # get_dummies handles 'material' column if present
-    df_encoded = pd.get_dummies(df)
-    X_input = df_encoded.reindex(columns=features, fill_value=0)
+    # C. Hybrid Expected (Combining ML + Physics)
+    # Using the weighted logic that gave you the best results in Colab
+    df['Hybrid_Expected'] = (0.6 * df['ML_Predicted']) + (0.4 * df['Theoretical_Gap'])
 
-    if not X_input.empty:
-        # ML Prediction
-        df['predicted_gap'] = model.predict(X_input)
+    # --- 6. RESULTS & METRICS ---
+    st.subheader("📊 Processed Results")
+    st.dataframe(df)
+
+    if 'band_gap_exp' in df.columns:
+        mae = mean_absolute_error(df['band_gap_exp'], df['Hybrid_Expected'])
+        r2 = r2_score(df['band_gap_exp'], df['Hybrid_Expected'])
         
-        # Determine fallback for Database values (Materials Project)
-        mp_gap = df['band_gap_mp'] if 'band_gap_mp' in df.columns else 3.20
-        
-        # HYBRID CALCULATION (Weighted Average)
-        # We use .fillna(0) here as a safety net for the math
-        df['expected_gap'] = (
-            (0.4 * df['predicted_gap'].fillna(0)) + 
-            (0.4 * df['theoretical_gap'].fillna(df['predicted_gap'])) + 
-            (0.2 * mp_gap)
-        )
+        c1, c2 = st.columns(2)
+        c1.metric("Hybrid System MAE", f"{mae:.4f} eV")
+        c2.metric("R² Accuracy Score", f"{r2:.4f}")
 
-        # --- 5. DISPLAY RESULTS ---
-        st.success(f"✅ Successfully processed {len(df)} rows of data.")
-        
-        # Display key columns
-        display_cols = ['temperature', 'concentration', 'theoretical_gap', 'predicted_gap', 'expected_gap']
-        st.subheader("📊 Result Summary")
-        st.dataframe(df[[c for c in display_cols if c in df.columns]].style.highlight_max(axis=0))
+        # Visualization
+        fig, ax = plt.subplots(figsize=(8, 4))
+        ax.scatter(df['band_gap_exp'], df['Hybrid_Expected'], color='blue', label='Predictions')
+        ax.plot([df['band_gap_exp'].min(), df['band_gap_exp'].max()], 
+                [df['band_gap_exp'].min(), df['band_gap_exp'].max()], 'r--', label='Perfect Match')
+        ax.set_xlabel("Experimental (Actual)")
+        ax.set_ylabel("Hybrid Expected")
+        ax.legend()
+        st.pyplot(fig)
 
-        # --- 6. VISUALIZATION ---
-        if 'temperature' in df.columns and len(df) > 1:
-            st.subheader("📈 Temperature vs. Band Gap")
-            df_sorted = df.sort_values('temperature')
-            
-            fig, ax = plt.subplots(figsize=(10, 5))
-            ax.plot(df_sorted['temperature'], df_sorted['theoretical_gap'], 'g--', label='Theoretical (Varshni)')
-            ax.plot(df_sorted['temperature'], df_sorted['predicted_gap'], 'b-o', label='ML Predicted')
-            ax.plot(df_sorted['temperature'], df_sorted['expected_gap'], 'r-s', label='Hybrid Expected', linewidth=2)
-            
-            ax.set_xlabel("Temperature (K)")
-            ax.set_ylabel("Band Gap (eV)")
-            ax.legend()
-            ax.grid(True, alpha=0.3)
-            st.pyplot(fig)
-            
-        # Download Option
-        csv = df.to_csv(index=False).encode('utf-8')
-        st.download_button("📥 Download Results as CSV", csv, "predicted_materials.csv", "text/csv")
+    # --- 7. EXPORT ---
+    st.download_button(
+        label="📥 Download Results as CSV",
+        data=df.to_csv(index=False).encode('utf-8'),
+        file_name='material_predictions.csv',
+        mime='text/csv',
+    )
