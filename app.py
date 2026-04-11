@@ -92,4 +92,58 @@ if model is not None:
             initial_count = len(df)
             # Drop rows with missing critical info or negative temperature
             df = df.dropna(subset=['material', 'temp'])
-            df = df[df['temp'] >= 0].reset_index(drop=True
+            df = df[df['temp'] >= 0].reset_index(drop=True)
+            
+            cleaned_count = initial_count - len(df)
+            if cleaned_count > 0:
+                st.warning(f"🧹 Removed {cleaned_count} invalid/missing rows.")
+
+            if st.button("🚀 Run Analysis"):
+                if df.empty:
+                    st.error("No valid data rows to analyze.")
+                else:
+                    results = []
+                    progress_bar = st.progress(0.0)
+                    total_rows = len(df)
+                    
+                    for count, (idx, row) in enumerate(df.iterrows(), 1):
+                        res = run_pipeline(
+                            row['material'], 
+                            row.get('dopant', 'None'), 
+                            row['temp'], 
+                            row.get('conc', 0), 
+                            row.get('particle_size', 0)
+                        )
+                        results.append(res)
+                        progress_bar.progress(float(count / total_rows))
+                    
+                    df_results = pd.DataFrame(results)
+
+                    # --- RESULTS DISPLAY ---
+                    st.subheader("📊 Analysis Results")
+                    st.dataframe(df_results)
+
+                    # --- DOWNLOADS ---
+                    col1, col2 = st.columns(2)
+                    
+                    # 1. CSV Download
+                    csv = df_results.to_csv(index=False).encode('utf-8')
+                    col1.download_button("📥 Download CSV", data=csv, file_name='results.csv', mime='text/csv')
+
+                    # 2. Graph & PNG Download
+                    fig, ax = plt.subplots()
+                    ax.scatter(df_results["Theoretical_Gap"], df_results["Predicted_Gap"], color='teal')
+                    ax.plot([df_results["Theoretical_Gap"].min(), df_results["Theoretical_Gap"].max()], 
+                            [df_results["Theoretical_Gap"].min(), df_results["Theoretical_Gap"].max()], 'r--')
+                    ax.set_xlabel("Theoretical (eV)")
+                    ax.set_ylabel("Predicted (eV)")
+                    st.pyplot(fig)
+
+                    buf = io.BytesIO()
+                    fig.savefig(buf, format="png")
+                    col2.download_button("🖼️ Download Graph", data=buf.getvalue(), file_name="plot.png", mime="image/png")
+
+        except Exception as e:
+            st.error(f"❌ Error: {e}")
+else:
+    st.error("⚠️ Model files missing.")
