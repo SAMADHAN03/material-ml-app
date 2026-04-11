@@ -11,7 +11,6 @@ from sklearn.metrics import mean_absolute_error, r2_score
 
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, Image
 from reportlab.lib.styles import getSampleStyleSheet
-
 from docx import Document
 
 # -----------------------------
@@ -59,6 +58,56 @@ def varshni(material, T):
     return Eg0 - (alpha * T**2) / (T + beta)
 
 # -----------------------------
+# AUTO COLUMN DETECTION
+# -----------------------------
+def normalize_columns(df):
+
+    df.columns = df.columns.str.strip().str.lower()
+
+    col_map = {}
+
+    for col in df.columns:
+
+        if "temp" in col:
+            col_map[col] = "temp"
+
+        elif "conc" in col:
+            col_map[col] = "conc"
+
+        elif "size" in col:
+            col_map[col] = "particle_size"
+
+        elif "material" in col:
+            col_map[col] = "material"
+
+        elif "dopant" in col:
+            col_map[col] = "dopant"
+
+        elif "band_gap_exp" in col or "experimental" in col:
+            col_map[col] = "band_gap_exp"
+
+    df = df.rename(columns=col_map)
+
+    return df
+
+# -----------------------------
+# UNIT CONVERSION
+# -----------------------------
+def convert_units(df):
+
+    # Temperature conversion
+    if df["temp"].mean() < 200:  # assume Celsius
+        st.info("🌡 Temperature converted from °C to K")
+        df["temp"] = df["temp"] + 273
+
+    # Concentration normalization
+    if df["conc"].max() <= 1:
+        st.info("🧪 Concentration converted to %")
+        df["conc"] = df["conc"] * 100
+
+    return df
+
+# -----------------------------
 # ML PIPELINE
 # -----------------------------
 def run_pipeline(material, dopant, temp, conc, size):
@@ -80,56 +129,43 @@ def run_pipeline(material, dopant, temp, conc, size):
     df_encoded = df_encoded.reindex(columns=feature_columns, fill_value=0)
 
     predicted = model.predict(df_encoded)[0]
-    expected = np.mean([predicted, theoretical, oqmd_gap, aflow_gap])
+    expected = np.mean([predicted, theoretical, oqmd_gap, aflow_gap, mp_gap])
 
-    return predicted, expected, theoretical, mp_gap
+    return theoretical, predicted, expected, mp_gap, oqmd_gap, aflow_gap
 
 # -----------------------------
 # PDF GENERATOR
 # -----------------------------
-def generate_pdf(df_results, fig, mae=None, r2=None):
+def generate_pdf(df_results, fig):
 
-    file_path = tempfile.NamedTemporaryFile(delete=False, suffix=".pdf").name
-
-    doc = SimpleDocTemplate(file_path)
+    path = tempfile.NamedTemporaryFile(delete=False, suffix=".pdf").name
+    doc = SimpleDocTemplate(path)
     styles = getSampleStyleSheet()
+
     elements = []
-
-    elements.append(Paragraph("Material ML Analysis Report", styles['Title']))
+    elements.append(Paragraph("Material ML Report", styles['Title']))
     elements.append(Spacer(1, 12))
-
-    if mae is not None and r2 is not None:
-        elements.append(Paragraph(f"MAE: {mae:.4f}", styles['Normal']))
-        elements.append(Paragraph(f"R² Score: {r2:.4f}", styles['Normal']))
-        elements.append(Spacer(1, 12))
 
     data = [df_results.columns.tolist()] + df_results.values.tolist()
     elements.append(Table(data))
-    elements.append(Spacer(1, 12))
 
     img_path = tempfile.NamedTemporaryFile(delete=False, suffix=".png").name
     fig.savefig(img_path)
-
-    elements.append(Paragraph("Band Gap Comparison Graph", styles['Heading2']))
     elements.append(Image(img_path, width=400, height=300))
 
     doc.build(elements)
 
-    return file_path
+    return path
 
 # -----------------------------
 # WORD GENERATOR
 # -----------------------------
-def generate_word(df_results, mae=None, r2=None):
+def generate_word(df_results):
 
-    file_path = tempfile.NamedTemporaryFile(delete=False, suffix=".docx").name
-
+    path = tempfile.NamedTemporaryFile(delete=False, suffix=".docx").name
     doc = Document()
-    doc.add_heading("Material ML Analysis Report", 0)
 
-    if mae is not None and r2 is not None:
-        doc.add_paragraph(f"MAE: {mae:.4f}")
-        doc.add_paragraph(f"R² Score: {r2:.4f}")
+    doc.add_heading("Material ML Report", 0)
 
     table = doc.add_table(rows=1, cols=len(df_results.columns))
 
@@ -141,154 +177,109 @@ def generate_word(df_results, mae=None, r2=None):
         for i, val in enumerate(row):
             cells[i].text = str(val)
 
-    doc.save(file_path)
+    doc.save(path)
 
-    return file_path
+    return path
 
 # -----------------------------
 # UI
 # -----------------------------
-st.title("🔬 Advanced Material ML Analysis")
+st.title("🔬 Advanced Material ML System")
 
-uploaded_file = st.file_uploader("📂 Upload CSV or Excel", type=["csv", "xlsx"])
+file = st.file_uploader("Upload CSV or Excel", type=["csv", "xlsx"])
 
-if uploaded_file:
+if file:
 
-    # READ FILE
-    if uploaded_file.name.endswith(".csv"):
-        df = pd.read_csv(uploaded_file, sep=None, engine="python")
-    else:
-        df = pd.read_excel(uploaded_file)
+    df = pd.read_csv(file, sep=None, engine='python') if file.name.endswith(".csv") else pd.read_excel(file)
 
-    st.subheader("📊 Raw Data")
+    st.subheader("Raw Data")
     st.dataframe(df)
 
-    # -----------------------------
     # CLEANING
-    # -----------------------------
-    before_rows = len(df)
+    df = normalize_columns(df)
 
-    df.columns = df.columns.str.strip().str.lower()
-    has_exp = "band_gap_exp" in df.columns
+    required = ["material", "temp"]
 
-    for col in ["temp", "conc", "particle_size", "band_gap_exp"]:
-        if col in df.columns:
-            df[col] = pd.to_numeric(df[col], errors="coerce")
+    if not all(col in df.columns for col in required):
+        st.error("Missing required columns (material, temp)")
+        st.stop()
+
+    df = df.dropna(subset=["material", "temp"])
+
+    df["temp"] = pd.to_numeric(df["temp"], errors="coerce")
+    df["conc"] = pd.to_numeric(df.get("conc", 0), errors="coerce").fillna(0)
+    df["particle_size"] = pd.to_numeric(df.get("particle_size", 0), errors="coerce").fillna(0)
 
     df = df[df["temp"] > 0]
 
-    df["conc"] = df.get("conc", 0).fillna(0)
-    df["particle_size"] = df.get("particle_size", 0).fillna(0)
+    df = convert_units(df)
 
-    df = df.dropna(subset=["material", "temp"])
-    df = df.reset_index(drop=True)
-
-    after_rows = len(df)
-
-    st.subheader("🧹 Cleaning Report")
-    st.write(f"Before: {before_rows} | After: {after_rows}")
-
-    st.subheader("✅ Cleaned Data")
+    st.subheader("Cleaned Data")
     st.dataframe(df)
 
-    # -----------------------------
-    # RUN ANALYSIS
-    # -----------------------------
-    if st.button("🚀 Run Analysis"):
+    # RUN
+    if st.button("Run Analysis"):
 
-        with st.spinner("Running ML Analysis..."):
+        results = []
 
-            results = []
-            progress = st.progress(0.0)
+        for _, row in df.iterrows():
 
-            for i, row in df.iterrows():
+            theo, pred, exp, mp, oqmd, aflow = run_pipeline(
+                row["material"],
+                row.get("dopant", "None"),
+                row["temp"],
+                row["conc"],
+                row["particle_size"]
+            )
 
-                pred, exp, theo, mp = run_pipeline(
-                    row["material"],
-                    row.get("dopant", "None"),
-                    row["temp"],
-                    row.get("conc", 0),
-                    row.get("particle_size", 0)
-                )
-
-                res = {
-                    "Material": row["material"],
-                    "Predicted": pred,
-                    "Expected": exp,
-                    "Theoretical": theo,
-                    "MP": mp
-                }
-
-                if has_exp:
-                    res["Experimental"] = row.get("band_gap_exp", np.nan)
-
-                results.append(res)
-                progress.progress((i + 1) / len(df))
+            results.append({
+                "material": row["material"],
+                "dopant": row.get("dopant", "None"),
+                "temp (K)": row["temp"],
+                "conc (%)": row["conc"],
+                "particle_size": row["particle_size"],
+                "band_gap_theoretical": theo,
+                "band_gap_predicted": pred,
+                "band_gap_expected": exp,
+                "band_gap_api(MP)": mp,
+                "band_gap_oqmd": oqmd,
+                "band_gap_aflow": aflow
+            })
 
         df_results = pd.DataFrame(results)
 
-        st.subheader("📊 Results")
+        st.subheader("Results")
         st.dataframe(df_results)
 
-        # -----------------------------
-        # METRICS
-        # -----------------------------
-        mae, r2 = None, None
-
-        if has_exp:
-            df_valid = df_results.dropna(subset=["Experimental"])
-
-            if not df_valid.empty:
-                mae = mean_absolute_error(df_valid["Experimental"], df_valid["Predicted"])
-                r2 = r2_score(df_valid["Experimental"], df_valid["Predicted"])
-
-                col1, col2 = st.columns(2)
-                col1.metric("MAE", round(mae, 4))
-                col2.metric("R²", round(r2, 4))
-
-        # -----------------------------
-        # GRAPH
-        # -----------------------------
+        # GRAPH vs TEMP
         fig, ax = plt.subplots()
 
-        ax.plot(df_results["Predicted"], label="Predicted")
-        ax.plot(df_results["Expected"], label="Expected")
+        ax.plot(df_results["temp (K)"], df_results["band_gap_theoretical"], label="Theoretical")
+        ax.plot(df_results["temp (K)"], df_results["band_gap_predicted"], label="Predicted")
+        ax.plot(df_results["temp (K)"], df_results["band_gap_expected"], label="Expected")
 
-        if has_exp:
-            ax.plot(df_results["Experimental"], label="Experimental")
-
+        ax.set_xlabel("Temperature (K)")
+        ax.set_ylabel("Band Gap (eV)")
+        ax.set_title("Band Gap vs Temperature")
         ax.legend()
-        ax.set_title("Band Gap Comparison")
+        ax.grid()
 
         st.pyplot(fig)
 
-        # -----------------------------
-        # DOWNLOAD CSV
-        # -----------------------------
+        # DOWNLOADS
         csv = df_results.to_csv(index=False).encode()
-        st.download_button("⬇ Download CSV", csv, "results.csv")
+        st.download_button("Download CSV", csv, "results.csv")
 
-        # -----------------------------
-        # DOWNLOAD GRAPH
-        # -----------------------------
         buf = io.BytesIO()
         fig.savefig(buf, format="png")
-        st.download_button("⬇ Download Graph", buf.getvalue(), "graph.png")
+        st.download_button("Download Graph", buf.getvalue(), "graph.png")
 
-        # -----------------------------
-        # PDF DOWNLOAD
-        # -----------------------------
-        pdf_file = generate_pdf(df_results, fig, mae, r2)
+        pdf = generate_pdf(df_results, fig)
+        with open(pdf, "rb") as f:
+            st.download_button("Download PDF", f, "report.pdf")
 
-        with open(pdf_file, "rb") as f:
-            st.download_button("📄 Download PDF", f, "report.pdf")
+        word = generate_word(df_results)
+        with open(word, "rb") as f:
+            st.download_button("Download Word", f, "report.docx")
 
-        # -----------------------------
-        # WORD DOWNLOAD
-        # -----------------------------
-        word_file = generate_word(df_results, mae, r2)
-
-        with open(word_file, "rb") as f:
-            st.download_button("📝 Download Word", f, "report.docx")
-
-        st.success("✅ Analysis Completed Successfully!")
+        st.success("Analysis Complete 🚀")
