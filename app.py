@@ -30,9 +30,11 @@ def get_base_gap_from_api(formula):
     try:
         with MPRester(API_KEY) as mpr:
             docs = mpr.summary.search(formula=formula, fields=["band_gap"])
-            if docs: return docs[0].band_gap
-    except: pass
-    return 3.0 # Fallback default
+            if docs:
+                return docs[0].band_gap
+    except:
+        pass
+    return 3.0  # Fallback default
 
 def varshni_logic(material, T):
     params = {"ZnO": (5.5e-4, 900), "Fe2O3": (4.5e-4, 500), "CeO2": (4.7e-4, 600)}
@@ -53,10 +55,17 @@ def run_pipeline(material, dopant, temp, conc, size):
     
     # Return specific ordered dictionary
     return {
-        "Material": material, "Dopant": dopant, "Temp": temp, "Conc": conc, "Particle Size": size,
-        "Theoretical Band Gap": theoretical, "Predicted Bandgap": predicted, 
-        "Band Gap Expected": expected, "API Prediction (0K)": api_0k, 
-        "OQMD Band Gap": oqmd, "AFLOW Band Gap": aflow
+        "Material": material,
+        "Dopant": dopant,
+        "Temp": temp,
+        "Conc": conc,
+        "Particle Size": size,
+        "Theoretical Band Gap": theoretical,
+        "Predicted Bandgap": predicted,
+        "Band Gap Expected": expected,
+        "API Prediction (0K)": api_0k,
+        "OQMD Band Gap": oqmd,
+        "AFLOW Band Gap": aflow
     }
 
 # --- STEP 4: UI & DATA CLEANING ---
@@ -69,75 +78,44 @@ if model is not None:
     if uploaded_file is not None:
         try:
             df = pd.read_csv(uploaded_file, sep=None, engine='python') if uploaded_file.name.endswith('.csv') else pd.read_excel(uploaded_file)
-            df.columns = df.columns.str.replace(r'[^\w\s]', '', regex=True).str.strip().str.lower()
             
+            df.columns = df.columns.str.replace(r'[^\w\s]', '', regex=True).str.strip().str.lower()
             mapping = {"temp": ["temp", "temperature"], "material": ["mat", "formula"], "dopant": ["dopedwith", "dopant"]}
+            
             for std, aliases in mapping.items():
                 for alias in aliases:
                     if alias in df.columns:
                         df = df.rename(columns={alias: std})
                         break
             
+            # --- ROBUST DATA CLEANING ---
+            initial_count = len(df)
+            
+            # 1. Convert columns to numeric, forcing errors to 'NaN' (None)
             for col in ["temp", "conc", "particle_size"]:
                 if col in df.columns:
                     df[col] = pd.to_numeric(df[col], errors='coerce')
             
-            df = df.dropna(subset=['material', 'temp']).reset_index(drop=True)
+            # 2. Remove 'None' / NaN in essential columns
+            df = df.dropna(subset=['material', 'temp'])
+            
+            # 3. Remove Invalid/Negative Temperatures (Physical Constraint for Kelvin)
+            df = df[df['temp'] >= 0].reset_index(drop=True)
+            
+            # Notification of cleaned rows
+            removed = initial_count - len(df)
+            if removed > 0:
+                st.warning(f"🧹 Cleaned {removed} invalid rows (missing data or negative temperatures).")
 
             if st.button("🚀 Run Analysis"):
                 if df.empty:
-                    st.error("❌ No valid data found. Check your file format.")
+                    st.error("❌ No valid data found. Check your file format or ensure valid temperatures.")
                 else:
                     results = []
                     bar = st.progress(0.0)
                     for i, row in df.iterrows():
-                        results.append(run_pipeline(row['material'], row['dopant'], row['temp'], row.get('conc', 0), row.get('particle_size', 0)))
-                        bar.progress(min((i + 1) / len(df), 1.0))
-                    
-                    df_results = pd.DataFrame(results)
-
-                    # --- METRICS SECTION ---
-                    y_true, y_pred = df_results["Theoretical Band Gap"], df_results["Predicted Bandgap"]
-                    mae = mean_absolute_error(y_true, y_pred)
-                    r2 = r2_score(y_true, y_pred)
-                    
-                    m1, m2, m3 = st.columns(3)
-                    m1.metric("MAE", f"{mae:.3f} eV")
-                    m2.metric("R² Score", f"{r2:.2f}")
-                    m3.metric("Samples", len(df_results))
-                    
-                    if mae < 0.5:
-                        st.success(f"✅ Accurate Match: MAE is {mae:.3f} eV.")
-                    else:
-                        st.warning(f"⚠️ Variance detected: MAE is {mae:.3f} eV. Predicted results differ from Theoretical baseline.")
-
-                    # --- DOWNLOAD BUTTONS ---
-                    st.divider()
-                    c_dl1, c_dl2 = st.columns(2)
-                    csv_data = df_results.to_csv(index=False).encode('utf-8')
-                    c_dl1.download_button("📥 Download Results (CSV)", csv_data, "analysis.csv", "text/csv", use_container_width=True)
-
-                    # --- GRAPH GENERATION ---
-                    df_p = df_results.sort_values("Temp")
-                    fig, ax = plt.subplots(figsize=(10, 5))
-                    ax.plot(df_p["Temp"], df_p["Theoretical Band Gap"], label="Theoretical (Varshni)", color="#E63946", ls='--', marker='x')
-                    ax.plot(df_p["Temp"], df_p["Predicted Bandgap"], label="ML Predicted", color="#457B9D", marker='o')
-                    ax.plot(df_p["Temp"], df_p["Band Gap Expected"], label="Combined Expected", color="#2A9D8F", marker='s', alpha=0.6)
-                    
-                    ax.set_xlabel("Temperature (K)", fontweight='bold')
-                    ax.set_ylabel("Band Gap (eV)", fontweight='bold')
-                    ax.legend(loc='best', shadow=True)
-                    ax.grid(True, linestyle=':', alpha=0.5)
-                    
-                    # Buffer for Graph Download
-                    img_buffer = io.BytesIO()
-                    fig.savefig(img_buffer, format='png', dpi=300)
-                    c_dl2.download_button("🖼️ Download Graph (PNG)", img_buffer.getvalue(), "bandgap_graph.png", "image/png", use_container_width=True)
-
-                    # Display UI
-                    st.pyplot(fig)
-                    st.subheader("📋 Updated Result Table")
-                    st.dataframe(df_results, use_container_width=True)
-
-        except Exception as e:
-            st.error(f"Critical Error: {e}")
+                        results.append(run_pipeline(
+                            row['material'], 
+                            row.get('dopant', 'None'), 
+                            row['temp'], 
+                            row.get('
