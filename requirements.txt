@@ -1,8 +1,8 @@
-streamlit
-pandas
-numpy
-matplotlib
-joblib
+reportlab
+python-docx
 mp-api
 scikit-learn
-openpyxl
+matplotlib
+pandas
+numpy
+joblib
