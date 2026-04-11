@@ -45,26 +45,23 @@ def varshni_logic(material, T):
 def run_pipeline(material, dopant, temp, conc, size):
     api_0k = get_base_gap_from_api(material)
     theoretical = varshni_logic(material, temp)
-    
     df_input = pd.DataFrame([{"material": material, "dopant": dopant, "temp": temp, "conc": conc, "particle_size": size}])
     df_encoded = pd.get_dummies(df_input).reindex(columns=feature_columns, fill_value=0)
     predicted = model.predict(df_encoded)[0]
-    
     oqmd, aflow = 3.1, 3.05
     expected = np.mean([predicted, theoretical, oqmd, aflow])
-    
     return {
-        "Material": material,
-        "Dopant": dopant,
-        "Temp": temp,
-        "Conc": conc,
-        "Particle Size": size,
-        "Theoretical Band Gap": theoretical,
-        "Predicted Bandgap": predicted,
-        "Band Gap Expected": expected,
-        "API Prediction (0K)": api_0k,
-        "OQMD Band Gap": oqmd,
-        "AFLOW Band Gap": aflow
+        "Material": material, 
+        "Dopant": dopant, 
+        "Temp": temp, 
+        "Conc": conc, 
+        "Particle Size": size, 
+        "Theoretical Band Gap": theoretical, 
+        "Predicted Bandgap": predicted, 
+        "Band Gap Expected": expected, 
+        "API Prediction (0K)": api_0k, 
+        "OQMD Band Gap": oqmd, 
+        "AFLOW Band Gap": aflow 
     }
 
 # --- STEP 4: UI & DATA CLEANING ---
@@ -73,15 +70,18 @@ st.divider()
 
 if model is not None:
     uploaded_file = st.file_uploader("📂 Upload CSV or Excel", type=["csv", "xlsx"])
-    
     if uploaded_file is not None:
         try:
             # 1. Load Data
-            df = pd.read_csv(uploaded_file, sep=None, engine='python') if uploaded_file.name.endswith('.csv') else pd.read_excel(uploaded_file)
+            if uploaded_file.name.endswith('.csv'):
+                df = pd.read_csv(uploaded_file, sep=None, engine='python')
+            else:
+                df = pd.read_excel(uploaded_file)
             
             # 2. Standardize Columns
             df.columns = df.columns.str.replace(r'[^\w\s]', '', regex=True).str.strip().str.lower()
             mapping = {"temp": ["temp", "temperature"], "material": ["mat", "formula"], "dopant": ["dopedwith", "dopant"]}
+            
             for std, aliases in mapping.items():
                 for alias in aliases:
                     if alias in df.columns:
@@ -96,8 +96,8 @@ if model is not None:
             
             df = df.dropna(subset=['material', 'temp'])
             df = df[df['temp'] >= 0].reset_index(drop=True)
-            
             removed = initial_count - len(df)
+            
             if removed > 0:
                 st.warning(f"🧹 Cleaned {removed} invalid rows.")
 
@@ -109,7 +109,6 @@ if model is not None:
                     results = []
                     bar = st.progress(0.0)
                     for i, row in df.iterrows():
-                        # FIXED: This was where the SyntaxError occurred
                         results.append(run_pipeline(
                             row['material'], 
                             row.get('dopant', 'None'), 
@@ -122,8 +121,27 @@ if model is not None:
                     df_results = pd.DataFrame(results)
 
                     # --- METRICS & VISUALS ---
-                    y_true, y_pred = df_results["Theoretical Band Gap"], df_results["Predicted Bandgap"]
+                    st.subheader("📊 Analysis Results")
+                    st.dataframe(df_results)
+
+                    y_true = df_results["Theoretical Band Gap"]
+                    y_pred = df_results["Predicted Bandgap"]
                     mae = mean_absolute_error(y_true, y_pred)
                     r2 = r2_score(y_true, y_pred)
-                    
-                    m1
+
+                    col1, col2 = st.columns(2)
+                    col1.metric("Mean Absolute Error", f"{mae:.4f}")
+                    col2.metric("R² Score", f"{r2:.4f}")
+
+                    # Simple visualization
+                    fig, ax = plt.subplots()
+                    ax.scatter(y_true, y_pred, alpha=0.5)
+                    ax.plot([y_true.min(), y_true.max()], [y_true.min(), y_true.max()], 'r--')
+                    ax.set_xlabel("Theoretical Band Gap")
+                    ax.set_ylabel("Predicted Band Gap")
+                    st.pyplot(fig)
+
+        except Exception as e:
+            st.error(f"❌ Critical Error: {e}")
+else:
+    st.warning("⚠️ Model files (model.pkl/features.pkl) are missing. Please upload them to the repository.")
