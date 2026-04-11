@@ -228,4 +228,4 @@ if file:
         with open(word_file, "rb") as f:
             st.download_button("📝 Download Word", f, "report.docx")
 
-        st.success("✅ Analysis Complete")S
+        st.success("✅ Analysis Complete")
