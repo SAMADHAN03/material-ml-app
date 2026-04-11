@@ -9,7 +9,7 @@ from sklearn.metrics import mean_absolute_error, r2_score
 
 # --- STEP 1: CONFIGURATION ---
 st.set_page_config(page_title="Material ML Analysis", layout="wide")
-API_KEY = st.secrets.get("MP_API_KEY", "YOUR_FALLBACK_KEY")
+API_KEY = st.secrets.get("MP_API_KEY", "3CX5U54ckg2IfJV2lK5zRIrS76Kx2rX2")
 
 # --- STEP 2: LOAD ASSETS ---
 @st.cache_resource
@@ -43,105 +43,108 @@ def varshni_logic(material, T):
     return eg0 - (alpha * T**2) / (T + beta)
 
 def run_pipeline(material, dopant, temp, conc, size):
-    api_0k = get_base_gap_from_api(material)
     theoretical = varshni_logic(material, temp)
     df_input = pd.DataFrame([{"material": material, "dopant": dopant, "temp": temp, "conc": conc, "particle_size": size}])
     df_encoded = pd.get_dummies(df_input).reindex(columns=feature_columns, fill_value=0)
     predicted = model.predict(df_encoded)[0]
+    
+    # Mock supplemental data for comparison
     oqmd, aflow = 3.1, 3.05
     expected = np.mean([predicted, theoretical, oqmd, aflow])
+    
     return {
-        "Material": material, 
-        "Dopant": dopant, 
-        "Temp": temp, 
-        "Conc": conc, 
-        "Particle Size": size, 
-        "Theoretical Band Gap": theoretical, 
-        "Predicted Bandgap": predicted, 
-        "Band Gap Expected": expected, 
-        "API Prediction (0K)": api_0k, 
-        "OQMD Band Gap": oqmd, 
-        "AFLOW Band Gap": aflow 
+        "Material": material, "Dopant": dopant, "Temp": temp, "Conc": conc, 
+        "Particle Size": size, "Theoretical_Gap": theoretical, 
+        "Predicted_Gap": predicted, "Expected_Gap": expected
     }
 
-# --- STEP 4: UI & DATA CLEANING ---
+# --- STEP 4: UI ---
 st.title("🔬 Advanced Material ML Analysis")
-st.divider()
+st.markdown("Upload your dataset to calculate band gaps and download results.")
 
 if model is not None:
     uploaded_file = st.file_uploader("📂 Upload CSV or Excel", type=["csv", "xlsx"])
+    
     if uploaded_file is not None:
         try:
-            # 1. Load Data
-            if uploaded_file.name.endswith('.csv'):
-                df = pd.read_csv(uploaded_file, sep=None, engine='python')
-            else:
-                df = pd.read_excel(uploaded_file)
-            
-            # 2. Standardize Columns
-            df.columns = df.columns.str.replace(r'[^\w\s]', '', regex=True).str.strip().str.lower()
-            mapping = {"temp": ["temp", "temperature"], "material": ["mat", "formula"], "dopant": ["dopedwith", "dopant"]}
-            
-            for std, aliases in mapping.items():
-                for alias in aliases:
-                    if alias in df.columns:
-                        df = df.rename(columns={alias: std})
-                        break
+            # Load Data
+            df = pd.read_csv(uploaded_file) if uploaded_file.name.endswith('.csv') else pd.read_excel(uploaded_file)
             
             # --- ROBUST DATA CLEANING ---
-            initial_count = len(df)
-            for col in ["temp", "conc", "particle_size"]:
+            # 1. Standardize column names
+            df.columns = df.columns.str.strip().str.lower()
+            
+            # 2. Convert relevant columns to numeric, turning strings/errors into NaN
+            numeric_cols = ["temp", "conc", "particle_size"]
+            for col in numeric_cols:
                 if col in df.columns:
                     df[col] = pd.to_numeric(df[col], errors='coerce')
             
+            # 3. Drop rows where critical data is missing (Material or Temperature)
+            initial_count = len(df)
             df = df.dropna(subset=['material', 'temp'])
-            df = df[df['temp'] >= 0].reset_index(drop=True)
-            removed = initial_count - len(df)
             
-            if removed > 0:
-                st.warning(f"🧹 Cleaned {removed} invalid rows.")
+            # 4. Remove negative physical values
+            df = df[df['temp'] >= 0]
+            
+            cleaned_count = initial_count - len(df)
+            if cleaned_count > 0:
+                st.warning(f"🧹 Removed {cleaned_count} rows containing invalid or missing values.")
 
-            # --- RUN ANALYSIS ---
             if st.button("🚀 Run Analysis"):
-                if df.empty:
-                    st.error("❌ No valid data found.")
-                else:
-                    results = []
-                    bar = st.progress(0.0)
-                    for i, row in df.iterrows():
-                        results.append(run_pipeline(
-                            row['material'], 
-                            row.get('dopant', 'None'), 
-                            row['temp'], 
-                            row.get('conc', 0), 
-                            row.get('particle_size', 0)
-                        ))
-                        bar.progress(min((i + 1) / len(df), 1.0))
-                    
-                    df_results = pd.DataFrame(results)
+                results = []
+                progress_bar = st.progress(0)
+                
+                for i, row in df.iterrows():
+                    res = run_pipeline(
+                        row['material'], 
+                        row.get('dopant', 'None'), 
+                        row['temp'], 
+                        row.get('conc', 0), 
+                        row.get('particle_size', 0)
+                    )
+                    results.append(res)
+                    progress_bar.progress((i + 1) / len(df))
+                
+                df_results = pd.DataFrame(results)
 
-                    # --- METRICS & VISUALS ---
-                    st.subheader("📊 Analysis Results")
-                    st.dataframe(df_results)
+                # --- RESULTS DISPLAY ---
+                st.subheader("📊 Analysis Results")
+                st.dataframe(df_results)
 
-                    y_true = df_results["Theoretical Band Gap"]
-                    y_pred = df_results["Predicted Bandgap"]
-                    mae = mean_absolute_error(y_true, y_pred)
-                    r2 = r2_score(y_true, y_pred)
+                # --- DOWNLOAD BUTTONS ---
+                col1, col2 = st.columns(2)
+                
+                # 1. Download CSV Results
+                csv = df_results.to_csv(index=False).encode('utf-8')
+                col1.download_button(
+                    label="📥 Download Results as CSV",
+                    data=csv,
+                    file_name='material_analysis_results.csv',
+                    mime='text/csv',
+                )
 
-                    col1, col2 = st.columns(2)
-                    col1.metric("Mean Absolute Error", f"{mae:.4f}")
-                    col2.metric("R² Score", f"{r2:.4f}")
+                # 2. Generate and Download Plot
+                fig, ax = plt.subplots()
+                ax.scatter(df_results["Theoretical_Gap"], df_results["Predicted_Gap"], color='teal', label="Predictions")
+                ax.plot([df_results["Theoretical_Gap"].min(), df_results["Theoretical_Gap"].max()], 
+                        [df_results["Theoretical_Gap"].min(), df_results["Theoretical_Gap"].max()], 'r--', label="Perfect Fit")
+                ax.set_xlabel("Theoretical Band Gap (eV)")
+                ax.set_ylabel("Predicted Band Gap (eV)")
+                ax.legend()
+                st.pyplot(fig)
 
-                    # Simple visualization
-                    fig, ax = plt.subplots()
-                    ax.scatter(y_true, y_pred, alpha=0.5)
-                    ax.plot([y_true.min(), y_true.max()], [y_true.min(), y_true.max()], 'r--')
-                    ax.set_xlabel("Theoretical Band Gap")
-                    ax.set_ylabel("Predicted Band Gap")
-                    st.pyplot(fig)
+                # Save plot to buffer for download
+                buf = io.BytesIO()
+                fig.savefig(buf, format="png")
+                col2.download_button(
+                    label="🖼️ Download Graph as PNG",
+                    data=buf.getvalue(),
+                    file_name="band_gap_plot.png",
+                    mime="image/png"
+                )
 
         except Exception as e:
-            st.error(f"❌ Critical Error: {e}")
+            st.error(f"❌ Error processing file: {e}")
 else:
-    st.warning("⚠️ Model files (model.pkl/features.pkl) are missing. Please upload them to the repository.")
+    st.error("⚠️ Model assets not found. Please ensure 'model.pkl' and 'features.pkl' are in the repository.")
